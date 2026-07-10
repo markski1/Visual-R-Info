@@ -1,0 +1,32 @@
+node_modules
+/.impl
+/.cache
+/.localappdata
+/.appdata
+/.pnpm-cache
+/.pnpm-home
+/.pnpm-state
+/.pnpm-store
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+/coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
