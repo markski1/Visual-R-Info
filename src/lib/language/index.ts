@@ -1,4 +1,4 @@
-/** Perfil estable que implementará el primer MVP. */
-export const RINFO_CORE_PROFILE = 'rinfo-core-v1' as const;
-
-export type LanguageProfile = typeof RINFO_CORE_PROFILE | 'rinfo-compat-legacy' | 'cmre-v1';
+export * from './diagnostics/index.js';
+export * from './lexer/index.js';
+export * from './profiles/index.js';
+export * from './source/index.js';
