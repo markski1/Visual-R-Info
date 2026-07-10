@@ -5,8 +5,8 @@
 		</p>
 		<h1 class="text-5xl font-semibold tracking-tight text-balance sm:text-6xl">BetteR-Info</h1>
 		<p class="max-w-xl text-lg leading-8 text-muted-foreground">
-			La base del proyecto está lista. El próximo incremento incorporará el lexer, el parser y los
-			diagnósticos de <code class="rounded bg-muted px-1.5 py-0.5 text-sm">rinfo-core-v1</code>.
+			Un entorno web en desarrollo para escribir, validar y ejecutar programas completos de R-Info
+			directamente en el navegador.
 		</p>
 		<div class="flex flex-wrap gap-3 text-sm" aria-label="Estado de la implementación">
 			<span class="rounded-full border bg-card px-3 py-1.5 text-card-foreground">SvelteKit</span>

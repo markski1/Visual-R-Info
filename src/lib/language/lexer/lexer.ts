@@ -19,7 +19,7 @@ export interface LexerResult {
 const IDENTIFIER_START = /[\p{L}_]/u;
 const IDENTIFIER_CONTINUE = /[\p{L}\p{M}\p{N}_]/u;
 const DECIMAL_DIGIT = /[0-9]/;
-const HORIZONTAL_WHITESPACE = /\s/u;
+const HORIZONTAL_WHITESPACE = /[^\S\r\n\u2028\u2029]/u;
 
 export function lex(source: string): LexerResult {
 	return new Lexer(source).scan();
@@ -39,7 +39,7 @@ class Lexer {
 		while (!this.isAtEnd()) {
 			const character = this.currentCharacter();
 
-			if (character === '\r' || character === '\n') {
+			if (this.isLineBreak(character)) {
 				this.scanLineBreak();
 			} else if (this.isHorizontalWhitespace(character)) {
 				this.scanWhitespace();
@@ -72,14 +72,7 @@ class Lexer {
 		const start = this.position();
 		const startOffset = this.offset;
 
-		if (this.currentCharacter() === '\r' && this.peekCharacter() === '\n') {
-			this.offset += 2;
-		} else {
-			this.offset += 1;
-		}
-
-		this.line += 1;
-		this.column = 1;
+		this.advanceLineBreak();
 		this.addTrivia(TriviaKind.LineBreak, startOffset, start);
 	}
 
@@ -100,7 +93,7 @@ class Lexer {
 		this.advanceCodePoint();
 
 		while (!this.isAtEnd() && this.currentCharacter() !== '}') {
-			if (this.currentCharacter() === '\r' || this.currentCharacter() === '\n') {
+			if (this.isLineBreak(this.currentCharacter())) {
 				this.advanceLineBreak();
 			} else {
 				this.advanceCodePoint();
@@ -158,7 +151,7 @@ class Lexer {
 		let kind: TokenKindType | undefined;
 		switch (character) {
 			case ':':
-				if (this.consume('=')) kind = TokenKind.Assign;
+				kind = this.consume('=') ? TokenKind.Assign : TokenKind.Colon;
 				break;
 			case '+':
 				kind = TokenKind.Plus;
@@ -244,7 +237,8 @@ class Lexer {
 		if (this.currentCharacter() === '\r' && this.peekCharacter() === '\n') {
 			this.offset += 2;
 		} else {
-			this.offset += 1;
+			const codePoint = this.source.codePointAt(this.offset);
+			this.offset += codePoint !== undefined && codePoint > 0xffff ? 2 : 1;
 		}
 		this.line += 1;
 		this.column = 1;
@@ -272,7 +266,13 @@ class Lexer {
 	}
 
 	private isHorizontalWhitespace(character: string): boolean {
-		return character !== '\r' && character !== '\n' && HORIZONTAL_WHITESPACE.test(character);
+		return HORIZONTAL_WHITESPACE.test(character);
+	}
+
+	private isLineBreak(character: string): boolean {
+		return (
+			character === '\r' || character === '\n' || character === '\u2028' || character === '\u2029'
+		);
 	}
 
 	private isIdentifierStart(character: string): boolean {

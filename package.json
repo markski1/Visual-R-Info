@@ -2,12 +2,16 @@
 	"name": "better-info",
 	"private": true,
 	"version": "0.0.1",
+	"packageManager": "pnpm@11.7.0",
+	"engines": {
+		"node": "^20.19.0 || >=22.12.0"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",

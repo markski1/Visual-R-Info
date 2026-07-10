@@ -1,6 +1,19 @@
 import { TokenKind, type TokenKind as TokenKindType } from './token.js';
 
 const KEYWORDS: Readonly<Record<string, TokenKindType>> = {
+	programa: TokenKind.Program,
+	procesos: TokenKind.Processes,
+	proceso: TokenKind.Process,
+	areas: TokenKind.Areas,
+	AreaC: TokenKind.AreaC,
+	AreaP: TokenKind.AreaP,
+	AreaPC: TokenKind.AreaPC,
+	robots: TokenKind.Robots,
+	robot: TokenKind.Robot,
+	variables: TokenKind.Variables,
+	E: TokenKind.InputParameter,
+	S: TokenKind.OutputParameter,
+	ES: TokenKind.InputOutputParameter,
 	si: TokenKind.If,
 	sino: TokenKind.Else,
 	mientras: TokenKind.While,
@@ -24,7 +37,15 @@ const KEYWORDS: Readonly<Record<string, TokenKindType>> = {
 	HayPapelEnLaEsquina: TokenKind.PaperAtCorner,
 	HayFlorEnLaBolsa: TokenKind.FlowerInBag,
 	HayPapelEnLaBolsa: TokenKind.PaperInBag,
-	Informar: TokenKind.Inform
+	Informar: TokenKind.Inform,
+	AsignarArea: TokenKind.AssignArea,
+	Iniciar: TokenKind.StartRobot,
+	// Primitivas del entorno CMRE (Concurrent Multi Robot Environment).
+	Random: TokenKind.Random,
+	bloquearEsquina: TokenKind.LockCorner,
+	liberarEsquina: TokenKind.UnlockCorner,
+	enviarMensaje: TokenKind.SendMessage,
+	recibirMensaje: TokenKind.ReceiveMessage
 };
 
 export function keywordKind(lexeme: string): TokenKindType | undefined {
