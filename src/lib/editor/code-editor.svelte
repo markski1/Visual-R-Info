@@ -8,7 +8,7 @@
 	import { onMount } from 'svelte';
 
 	import type { Diagnostic } from '$lib/language/diagnostics/index.js';
-	import { lex } from '$lib/language/lexer/index.js';
+	import { lex, TokenKind } from '$lib/language/lexer/index.js';
 	import type { SourceSpan } from '$lib/language/source/index.js';
 
 	let {
@@ -101,6 +101,55 @@
 		'recibirMensaje'
 	].map((label) => ({ label, type: /^[A-Z]/.test(label) ? 'function' : 'keyword' }));
 
+	const booleanKinds: ReadonlySet<string> = new Set([TokenKind.True, TokenKind.False]);
+	const commandKinds: ReadonlySet<string> = new Set([
+		TokenKind.AreaC,
+		TokenKind.AreaP,
+		TokenKind.AreaPC,
+		TokenKind.Move,
+		TokenKind.TurnRight,
+		TokenKind.TakeFlower,
+		TokenKind.TakePaper,
+		TokenKind.DropFlower,
+		TokenKind.DropPaper,
+		TokenKind.PositionAvenue,
+		TokenKind.PositionStreet,
+		TokenKind.SetPosition,
+		TokenKind.FlowerAtCorner,
+		TokenKind.PaperAtCorner,
+		TokenKind.FlowerInBag,
+		TokenKind.PaperInBag,
+		TokenKind.Inform,
+		TokenKind.AssignArea,
+		TokenKind.StartRobot,
+		TokenKind.Random,
+		TokenKind.LockCorner,
+		TokenKind.UnlockCorner,
+		TokenKind.SendMessage,
+		TokenKind.ReceiveMessage
+	]);
+	const operatorKinds: ReadonlySet<string> = new Set([
+		TokenKind.Assign,
+		TokenKind.Colon,
+		TokenKind.Plus,
+		TokenKind.Minus,
+		TokenKind.Star,
+		TokenKind.Slash,
+		TokenKind.Equal,
+		TokenKind.NotEqual,
+		TokenKind.Less,
+		TokenKind.LessEqual,
+		TokenKind.Greater,
+		TokenKind.GreaterEqual,
+		TokenKind.Not,
+		TokenKind.And,
+		TokenKind.Or,
+		TokenKind.LeftParenthesis,
+		TokenKind.RightParenthesis,
+		TokenKind.Comma,
+		TokenKind.Semicolon
+	]);
+
 	onMount(() => {
 		view = new EditorView({
 			parent: host,
@@ -118,15 +167,33 @@
 					if (update.docChanged && !applyingExternalChange) onchange(update.state.doc.toString());
 				}),
 				EditorView.theme({
-					'&': { height: '100%', fontSize: '13px' },
+					'&': {
+						height: '100%',
+						fontSize: '13px',
+						backgroundColor: 'var(--syntax-background)',
+						color: 'var(--syntax-foreground)'
+					},
+					'.cm-editor, .cm-scroller': { backgroundColor: 'var(--syntax-background)' },
+					'.cm-cursor, .cm-dropCursor': {
+						borderLeftColor: 'var(--syntax-foreground) !important'
+					},
+					'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+						backgroundColor: 'var(--syntax-selection)'
+					},
 					'.cm-scroller': { fontFamily: '"JetBrains Mono", "Cascadia Code", monospace' },
 					'.cm-content': { padding: '12px 0' },
-					'.cm-gutters': { backgroundColor: 'transparent', border: 'none' },
-					'.cm-rinfo-current-line': { backgroundColor: 'oklch(0.9 0.07 85 / 55%)' },
-					'.tok-keyword': { color: 'oklch(0.48 0.18 285)', fontWeight: '600' },
-					'.tok-command': { color: 'oklch(0.47 0.14 210)' },
-					'.tok-number': { color: 'oklch(0.5 0.15 45)' },
-					'.tok-comment': { color: 'oklch(0.55 0.04 155)', fontStyle: 'italic' }
+					'.cm-gutters': {
+						backgroundColor: 'var(--syntax-background)',
+						color: 'var(--syntax-comment)',
+						border: 'none'
+					},
+					'.cm-rinfo-current-line': { backgroundColor: 'var(--syntax-active-line)' },
+					'.tok-keyword': { color: 'var(--syntax-keyword)', fontWeight: '600' },
+					'.tok-command': { color: 'var(--syntax-command)' },
+					'.tok-number': { color: 'var(--syntax-number)' },
+					'.tok-boolean': { color: 'var(--syntax-boolean)', fontWeight: '600' },
+					'.tok-operator': { color: 'var(--syntax-operator)' },
+					'.tok-comment': { color: 'var(--syntax-comment)', fontStyle: 'italic' }
 				})
 			]
 		});
@@ -182,12 +249,11 @@
 		for (const token of result.tokens) {
 			if (token.kind === 'EndOfFile' || token.span.start.offset === token.span.end.offset) continue;
 			let className = '';
-			if (token.kind === 'Integer') className = 'tok-number';
-			else if (token.kind !== 'Identifier') {
-				className = /^(Move|TurnRight|Take|Drop|Position|Flower|Paper)/.test(token.kind)
-					? 'tok-command'
-					: 'tok-keyword';
-			}
+			if (token.kind === TokenKind.Integer) className = 'tok-number';
+			else if (booleanKinds.has(token.kind)) className = 'tok-boolean';
+			else if (commandKinds.has(token.kind)) className = 'tok-command';
+			else if (operatorKinds.has(token.kind)) className = 'tok-operator';
+			else if (token.kind !== TokenKind.Identifier) className = 'tok-keyword';
 			if (className)
 				ranges.push({
 					from: token.span.start.offset,

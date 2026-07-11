@@ -8,6 +8,7 @@
 	},
 	"type": "module",
 	"scripts": {
+		"predev": "pnpm install --frozen-lockfile",
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",

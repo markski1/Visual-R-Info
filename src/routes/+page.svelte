@@ -1,6 +1,24 @@
 <script lang="ts">
 	import { Bot, Check, Pause, Play, RotateCcw, StepForward, Terminal } from '@lucide/svelte';
-	import { onDestroy } from 'svelte';
+	import {
+		Bot,
+		Check,
+		ExternalLink,
+		FolderOpen,
+		Gauge,
+		Monitor,
+		Moon,
+		Pause,
+		Play,
+		RotateCcw,
+		Save,
+		Settings,
+		StepForward,
+		Sun,
+		Terminal,
+		X
+	} from '@lucide/svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	import CodeEditor from '$lib/editor/code-editor.svelte';
 	import CityCanvas from '$lib/visualizer/city-canvas.svelte';
@@ -54,8 +72,20 @@ fin`;
 	let executionTimer: ReturnType<typeof setTimeout> | undefined;
 	let analyzedSource = SAMPLE;
 	let workspace: HTMLElement;
-	let splitY = $state(64);
-	let resizeAxis: 'x' | 'y' | undefined;
+	let fileInput: HTMLInputElement;
+	let settingsDialog: HTMLDialogElement;
+	let executionDelay = $state(140);
+	type Theme = 'light' | 'dark' | 'system';
+	let theme: Theme = $state('system');
+	const themeOptions = [
+		{ value: 'light', label: 'Claro', icon: Sun },
+		{ value: 'dark', label: 'Oscuro', icon: Moon },
+		{ value: 'system', label: 'Sistema', icon: Monitor }
+	] as const;
+	let splitX = $state(36);
+	let splitCity = $state(72);
+	let splitY = $state(58);
+	let resizeAxis: 'editor' | 'city' | 'right' | undefined;
 
 	const orientationLabels = {
 		north: 'Norte',
@@ -73,9 +103,26 @@ fin`;
 
 	const errors = $derived(analysis.diagnostics.filter(({ severity }) => severity === 'error'));
 	const selectedRobot = $derived(snapshot?.robots[0]);
+	const executionFinished = $derived(
+		snapshot !== undefined && runtime?.state.status === 'finished'
+	);
 
 	$effect(() => {
 		scheduleAnalysis(source);
+	});
+
+	onMount(() => {
+		const savedTheme = localStorage.getItem('visual-r-info-theme');
+		if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+			theme = savedTheme;
+		}
+		const media = matchMedia('(prefers-color-scheme: dark)');
+		const followSystemTheme = () => {
+			if (theme === 'system') applyTheme(theme);
+		};
+		media.addEventListener('change', followSystemTheme);
+		applyTheme(theme);
+		return () => media.removeEventListener('change', followSystemTheme);
 	});
 
 	function scheduleAnalysis(currentSource: string): void {
@@ -151,7 +198,7 @@ fin`;
 				running = false;
 				return;
 			}
-			executionTimer = setTimeout(tick, 140);
+			executionTimer = setTimeout(tick, executionDelay);
 		};
 		tick();
 	}
@@ -205,7 +252,7 @@ fin`;
 		if (diagnostic.span !== undefined) editor.reveal(diagnostic.span);
 	}
 
-	function startResize(axis: 'x' | 'y', event: PointerEvent): void {
+	function startResize(axis: 'editor' | 'city' | 'right', event: PointerEvent): void {
 		resizeAxis = axis;
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 	}
@@ -213,16 +260,23 @@ fin`;
 	function resize(event: PointerEvent): void {
 		if (resizeAxis === undefined) return;
 		const bounds = workspace.getBoundingClientRect();
-		if (resizeAxis === 'x') {
+		if (resizeAxis === 'editor') {
 			const pixels = Math.min(
-				Math.max(360, bounds.width - 346),
+				Math.max(360, bounds.width - 592),
 				Math.max(360, event.clientX - bounds.left)
 			);
 			splitX = (pixels / bounds.width) * 100;
+		} else if (resizeAxis === 'city') {
+			const editorEnd = (splitX / 100) * bounds.width;
+			const pixels = Math.min(
+				bounds.width - 286,
+				Math.max(editorEnd + 306, event.clientX - bounds.left)
+			);
+			splitCity = (pixels / bounds.width) * 100;
 		} else {
 			const pixels = Math.min(
-				Math.max(300, bounds.height - 186),
-				Math.max(300, event.clientY - bounds.top)
+				Math.max(180, bounds.height - 146),
+				Math.max(180, event.clientY - bounds.top)
 			);
 			splitY = (pixels / bounds.height) * 100;
 		}
@@ -232,25 +286,94 @@ fin`;
 		resizeAxis = undefined;
 		(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 	}
+
+	function saveFile(): void {
+		const programName = /\bprograma\s+([\p{L}\p{N}_-]+)/u.exec(source)?.[1] ?? 'programa';
+		const url = URL.createObjectURL(new Blob([source], { type: 'text/plain;charset=utf-8' }));
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `${programName}.ri`;
+		link.click();
+		URL.revokeObjectURL(url);
+		statusMessage = `Archivo ${link.download} guardado.`;
+	}
+
+	async function loadFile(file: File | undefined): Promise<void> {
+		if (file === undefined) return;
+		if (!file.name.toLocaleLowerCase().endsWith('.ri')) {
+			runtimeError = 'Sólo se pueden abrir archivos con extensión .ri.';
+			statusMessage = 'El archivo arrastrado no es un programa R-Info.';
+			return;
+		}
+		source = await file.text();
+		runtimeError = '';
+		statusMessage = `Archivo ${file.name} cargado.`;
+		fileInput.value = '';
+	}
+
+	function allowFileDrop(event: DragEvent): void {
+		if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+	}
+
+	function dropFile(event: DragEvent): void {
+		if (!event.dataTransfer?.types.includes('Files')) return;
+		event.preventDefault();
+		void loadFile(event.dataTransfer.files[0]);
+	}
+
+	function closeSettingsFromBackdrop(event: MouseEvent): void {
+		if (event.target === event.currentTarget) settingsDialog.close();
+	}
+
+	function applyTheme(nextTheme: Theme): void {
+		theme = nextTheme;
+		localStorage.setItem('visual-r-info-theme', nextTheme);
+		const dark =
+			nextTheme === 'dark' ||
+			(nextTheme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+		document.documentElement.classList.toggle('dark', dark);
+	}
 </script>
+
+<svelte:window ondragover={allowFileDrop} ondrop={dropFile} />
 
 <svelte:head><title>Visual R-Info</title></svelte:head>
 
-<main class="flex min-h-svh flex-col bg-[#ece8de] text-[#252722]">
+<main
+	class="bg-muted text-foreground flex min-h-svh min-w-0 flex-col lg:h-dvh lg:min-h-0 lg:overflow-hidden"
+>
 	<header
-		class="flex min-h-14 flex-wrap items-center gap-2 border-b border-black/10 bg-[#f8f6f0] px-3 py-2 shadow-sm sm:px-4"
+		class="bg-background border-border flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-1 shadow-sm sm:px-4 lg:flex-nowrap lg:overflow-hidden"
 	>
-		<div class="mr-auto">
+		<div class="mr-auto flex items-center gap-2">
 			<h1 class="text-sm font-bold tracking-tight">Visual R-Info</h1>
-			<p class="text-[10px] text-black/55">Adaptación web del entorno educativo R-Info</p>
+			<Button
+				variant="outline"
+				size="sm"
+				title="Configuración"
+				aria-label="Abrir configuración"
+				onclick={() => settingsDialog.showModal()}><Settings /> Configuración</Button
+			>
 		</div>
 		<div class="flex flex-wrap items-center gap-1.5">
-			<Button variant="outline" size="sm" onclick={validate}><Check /> Validar</Button>
-			<Button size="sm" onclick={run} disabled={running || errors.length > 0}
-				><Play /> Ejecutar</Button
+			<input
+				class="hidden"
+				type="file"
+				accept=".ri,text/plain"
+				bind:this={fileInput}
+				onchange={(event) => void loadFile(event.currentTarget.files?.[0])}
+			/>
+			<Button variant="ghost" size="sm" onclick={() => fileInput.click()}
+				><FolderOpen /> Abrir</Button
 			>
-			<Button variant="outline" size="sm" onclick={pause} disabled={!running}
-				><Pause /> Pausa</Button
+			<Button variant="ghost" size="sm" onclick={saveFile}><Save /> Guardar</Button>
+			<Button variant="outline" size="sm" onclick={validate}><Check /> Validar</Button>
+			<Button
+				variant={running ? 'secondary' : 'default'}
+				size="sm"
+				onclick={running ? pause : run}
+				disabled={!running && (errors.length > 0 || executionFinished)}
+				>{#if running}<Pause /> Pausar{:else}<Play /> Ejecutar{/if}</Button
 			>
 			<Button variant="outline" size="sm" onclick={step} disabled={running || errors.length > 0}
 				><StepForward /> Paso</Button
@@ -260,16 +383,16 @@ fin`;
 	</header>
 
 	<section
-		class="workspace min-h-0 flex-1 bg-black/10"
-		style={`--split-x: ${splitX}%; --split-y: ${splitY}%;`}
+		class="workspace bg-border min-h-0 flex-1"
+		style={`--split-x: ${splitX}%; --split-city: ${splitCity}%; --split-y: ${splitY}%;`}
 		bind:this={workspace}
 	>
-		<section class="panel-editor min-h-[480px] bg-[#fbfaf6] lg:min-h-0">
+		<section class="panel-editor bg-background min-h-[480px] min-w-0 overflow-hidden lg:min-h-0">
 			<div
-				class="flex h-9 items-center justify-between border-b border-black/10 px-3 text-xs font-semibold"
+				class="border-border flex h-9 items-center justify-between border-b px-3 text-xs font-semibold"
 			>
 				<span>programa.ri</span>
-				<span class={errors.length ? 'text-red-700' : 'text-[#2f6656]'}
+				<span class={errors.length ? 'text-destructive' : 'text-muted-foreground'}
 					>{errors.length ? `${errors.length} errores` : 'Sin errores'}</span
 				>
 			</div>
@@ -284,21 +407,28 @@ fin`;
 			</div>
 		</section>
 
-		<section class="panel-city min-h-[400px] bg-[#f7f4ed] lg:min-h-0">
-			<div
-				class="flex h-9 items-center justify-between border-b border-black/10 px-3 text-xs font-semibold"
-			>
-				<span>Ciudad</span><span class="font-normal text-black/50">100 × 100</span>
+		<section class="panel-city bg-card min-h-[400px] min-w-0 overflow-hidden lg:min-h-0">
+			<div class="border-border flex h-9 items-center justify-between gap-3 border-b px-3 text-xs">
+				<span class="min-w-0 truncate font-medium">{statusMessage}</span>
+				<span class="text-muted-foreground shrink-0"
+					>{snapshot ? `${snapshot.stepCount} pasos` : 'Listo'}</span
+				>
 			</div>
-			<div class="h-[calc(100%-2.25rem)]"><CityCanvas {snapshot} lastAction={statusMessage} /></div>
+			<div class="h-[calc(100%-2.25rem)]">
+				<CityCanvas {snapshot} lastAction={statusMessage} {theme} />
+			</div>
 		</section>
 
-		<section class="panel-diagnostics min-h-[200px] overflow-auto bg-[#f8f6f0] p-3 lg:min-h-0">
+		<section
+			class="panel-diagnostics bg-background min-h-[200px] min-w-0 overflow-auto p-3 lg:min-h-0"
+		>
 			<div class="mb-2 flex items-center gap-2 text-xs font-semibold">
 				<Terminal size={14} /> Diagnósticos y salida
 			</div>
 			{#if runtimeError}
-				<p class="mb-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-800">
+				<p
+					class="border-destructive/30 bg-destructive/10 text-destructive mb-2 rounded-md border p-2 text-xs"
+				>
 					{runtimeError}
 				</p>
 			{/if}
@@ -307,9 +437,9 @@ fin`;
 					{#each analysis.diagnostics as diagnostic (`${diagnostic.code}:${diagnostic.span?.start.offset ?? -1}`)}
 						<li>
 							<button
-								class="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-black/5"
+								class="hover:bg-muted w-full rounded px-2 py-1.5 text-left text-xs"
 								onclick={() => revealDiagnostic(diagnostic)}
-								><span class="font-mono font-semibold text-red-700">{diagnostic.code}</span> · {diagnostic.message}
+								><span class="text-destructive font-mono font-semibold">{diagnostic.code}</span> · {diagnostic.message}
 								{diagnostic.span ? `— línea ${diagnostic.span.start.line}` : ''}</button
 							>
 						</li>
@@ -322,67 +452,172 @@ fin`;
 						</p>{/each}
 				</div>
 			{:else}
-				<p class="text-xs text-black/55">{statusMessage}</p>
+				<p class="text-muted-foreground text-xs">{statusMessage}</p>
 			{/if}
 		</section>
 
-		<aside class="panel-inspector min-h-[220px] overflow-auto bg-[#f8f6f0] p-3 lg:min-h-0">
+		<aside class="panel-inspector bg-background min-h-[220px] min-w-0 overflow-auto p-3 lg:min-h-0">
 			<div class="mb-3 flex items-center gap-2 text-xs font-semibold">
 				<Bot size={14} /> Inspector
 			</div>
 			{#if selectedRobot}
 				<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-					<dt class="text-black/50">Robot</dt>
+					<dt class="text-muted-foreground">Robot</dt>
 					<dd class="font-medium">{selectedRobot.id}</dd>
-					<dt class="text-black/50">Posición</dt>
+					<dt class="text-muted-foreground">Posición</dt>
 					<dd>({selectedRobot.state.position.avenue}, {selectedRobot.state.position.street})</dd>
-					<dt class="text-black/50">Orientación</dt>
+					<dt class="text-muted-foreground">Orientación</dt>
 					<dd>{orientationLabels[selectedRobot.state.orientation]}</dd>
-					<dt class="text-black/50">Estado</dt>
+					<dt class="text-muted-foreground">Estado</dt>
 					<dd>{statusLabels[selectedRobot.state.status]}</dd>
-					<dt class="text-black/50">Bolsa</dt>
+					<dt class="text-muted-foreground">Bolsa</dt>
 					<dd>🌸 {selectedRobot.state.bag.flowers} · 📄 {selectedRobot.state.bag.papers}</dd>
 				</dl>
-				<div class="mt-4 border-t border-black/10 pt-3">
-					<p class="mb-2 text-[11px] font-semibold tracking-wide text-black/50 uppercase">
+				<div class="border-border mt-4 border-t pt-3">
+					<p class="text-muted-foreground mb-2 text-[11px] font-semibold tracking-wide uppercase">
 						Variables
 					</p>
 					{#each Object.entries(selectedRobot.variables) as [name, value] (name)}
 						<div class="flex justify-between py-1 font-mono text-xs">
 							<span>{name}</span><span>{String(value)}</span>
 						</div>
-					{:else}<p class="text-xs text-black/45">Sin variables.</p>{/each}
+					{:else}<p class="text-muted-foreground text-xs">Sin variables.</p>{/each}
 				</div>
-			{:else}<p class="text-xs text-black/50">
+			{:else}<p class="text-muted-foreground text-xs">
 					Ejecutá o avanzá un paso para inspeccionar el robot.
 				</p>{/if}
 		</aside>
 
 		<div
-			class="resize-handle resize-handle-x"
+			class="resize-handle resize-handle-editor"
 			role="separator"
-			aria-label="Cambiar ancho de los paneles"
+			aria-label="Cambiar ancho del editor"
 			aria-orientation="vertical"
-			onpointerdown={(event) => startResize('x', event)}
+			onpointerdown={(event) => startResize('editor', event)}
 			onpointermove={resize}
 			onpointerup={stopResize}
 		></div>
 		<div
-			class="resize-handle resize-handle-y"
+			class="resize-handle resize-handle-city"
+			role="separator"
+			aria-label="Cambiar ancho de la ciudad"
+			aria-orientation="vertical"
+			onpointerdown={(event) => startResize('city', event)}
+			onpointermove={resize}
+			onpointerup={stopResize}
+		></div>
+		<div
+			class="resize-handle resize-handle-right"
 			role="separator"
 			aria-label="Cambiar alto de los paneles"
 			aria-orientation="horizontal"
-			onpointerdown={(event) => startResize('y', event)}
+			onpointerdown={(event) => startResize('right', event)}
 			onpointermove={resize}
 			onpointerup={stopResize}
 		></div>
 	</section>
 
-	<footer
-		class="flex min-h-7 items-center justify-between border-t border-black/10 bg-[#f8f6f0] px-3 text-[11px] text-black/60"
+	<dialog
+		bind:this={settingsDialog}
+		class="bg-popover text-popover-foreground border-border m-auto w-[min(34rem,calc(100%-2rem))] rounded-lg border p-0 shadow-2xl backdrop:bg-black/50"
+		onclick={closeSettingsFromBackdrop}
+		onclose={() => settingsDialog.blur()}
 	>
-		<span>{statusMessage}</span><span>{snapshot ? `${snapshot.stepCount} pasos` : 'Listo'}</span>
-	</footer>
+		<div class="border-border flex items-center justify-between border-b px-5 py-4">
+			<div class="flex items-center gap-3">
+				<div
+					class="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md"
+				>
+					<Settings size={16} />
+				</div>
+				<div>
+					<h2 class="text-sm font-semibold">Configuración</h2>
+					<p class="text-muted-foreground text-xs">Personalizá tu entorno de trabajo.</p>
+				</div>
+			</div>
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				aria-label="Cerrar configuración"
+				onclick={() => settingsDialog.close()}><X /></Button
+			>
+		</div>
+		<div class="space-y-4 p-5">
+			<section class="bg-muted/50 border-border space-y-3 rounded-md border p-4">
+				<h3 class="text-sm font-semibold">Apariencia</h3>
+				<div class="grid grid-cols-3 gap-2" role="group" aria-label="Tema de la interfaz">
+					{#each themeOptions as option (option.value)}
+						{@const ThemeIcon = option.icon}
+						<Button
+							variant={theme === option.value ? 'default' : 'outline'}
+							class="h-16 flex-col gap-1"
+							onclick={() => applyTheme(option.value)}><ThemeIcon /> {option.label}</Button
+						>
+					{/each}
+				</div>
+			</section>
+			<section class="bg-muted/50 border-border space-y-3 rounded-md border p-4">
+				<div class="flex items-center justify-between gap-4">
+					<div class="flex items-center gap-2">
+						<Gauge size={16} />
+						<label for="execution-speed" class="text-sm font-semibold">Velocidad de ejecución</label
+						>
+					</div>
+					<output for="execution-speed" class="text-muted-foreground shrink-0 font-mono text-xs"
+						>{executionDelay} ms</output
+					>
+				</div>
+				<input
+					id="execution-speed"
+					type="range"
+					min="40"
+					max="500"
+					step="10"
+					bind:value={executionDelay}
+					class="execution-speed accent-primary w-full"
+				/>
+				<p class="text-muted-foreground text-xs">
+					Un intervalo menor hace que la ejecución automática avance más rápido.
+				</p>
+			</section>
+			<section class="bg-primary text-primary-foreground space-y-3 rounded-md p-4">
+				<div>
+					<h3 class="font-heading text-base font-bold">Visual R-Info</h3>
+					<p class="text-primary-foreground/70 text-xs">
+						Entorno educativo para programación R-Info
+					</p>
+				</div>
+				<p class="text-sm leading-relaxed">
+					Basado en el lenguaje y el entorno educativo R-Info de la Facultad de Informática de la
+					UNLP.<br>Desarrollado por Markski en TypeScript con SvelteKit.<br>Integra CodeMirror
+					como editor de código y una interfaz construida con Tailwind CSS y shadcn-svelte.
+				</p>
+				<div class="flex flex-wrap gap-2">
+					<Button
+						variant="secondary"
+						size="sm"
+						href="https://github.com/markski1/visual-r-info"
+						target="_blank"
+						rel="noreferrer"><ExternalLink /> Proyecto en GitHub</Button
+					>
+					<Button
+						variant="secondary"
+						size="sm"
+						href="https://www.info.unlp.edu.ar/wp-content/uploads/2024/01/GuiaIAI2024.pdf"
+						target="_blank"
+						rel="noreferrer"><ExternalLink /> Guía IAI 2024</Button
+					>
+					<Button
+						variant="secondary"
+						size="sm"
+						href="https://www.info.unlp.edu.ar/wp-content/uploads/2021/02/Guia_IAI_2021_V2.pdf"
+						target="_blank"
+						rel="noreferrer"><ExternalLink /> Guía IAI 2021</Button
+					>
+				</div>
+			</section>
+		</div>
+	</dialog>
 </main>
 
 <style>
@@ -398,27 +633,44 @@ fin`;
 		background: rgb(0 0 0 / 10%);
 	}
 
+	.execution-speed::-webkit-slider-thumb {
+		border-radius: 0;
+	}
+
+	.execution-speed::-moz-range-thumb {
+		border-radius: 0;
+	}
+
 	@media (min-width: 64rem) {
+		:global(html),
+		:global(body) {
+			height: 100%;
+			overflow: hidden;
+		}
 		.workspace {
-			grid-template-columns: var(--split-x) 6px minmax(340px, 1fr);
-			grid-template-rows: var(--split-y) 6px minmax(180px, 1fr);
+			grid-template-columns:
+				minmax(360px, var(--split-x)) 6px
+				minmax(300px, calc(var(--split-city) - var(--split-x) - 6px)) 6px
+				minmax(280px, 1fr);
+			grid-template-rows: minmax(180px, var(--split-y)) 6px minmax(140px, 1fr);
 			gap: 0;
+			overflow: hidden;
 		}
 		.panel-editor {
 			grid-column: 1;
-			grid-row: 1;
+			grid-row: 1 / 4;
 		}
 		.panel-city {
 			grid-column: 3;
-			grid-row: 1;
+			grid-row: 1 / 4;
 		}
 		.panel-diagnostics {
-			grid-column: 1;
+			grid-column: 5;
 			grid-row: 3;
 		}
 		.panel-inspector {
-			grid-column: 3;
-			grid-row: 3;
+			grid-column: 5;
+			grid-row: 1;
 		}
 		.resize-handle {
 			display: block;
@@ -428,21 +680,32 @@ fin`;
 		.resize-handle::after {
 			position: absolute;
 			content: '';
-			inset: -3px;
 		}
 		.resize-handle:hover,
 		.resize-handle:active {
-			background: #568879;
+			background: var(--primary);
 		}
-		.resize-handle-x {
+		.resize-handle-editor {
 			grid-column: 2;
 			grid-row: 1 / 4;
 			cursor: col-resize;
 		}
-		.resize-handle-y {
-			grid-column: 1 / 4;
+		.resize-handle-editor::after,
+		.resize-handle-city::after {
+			inset: 0 -3px;
+		}
+		.resize-handle-city {
+			grid-column: 4;
+			grid-row: 1 / 4;
+			cursor: col-resize;
+		}
+		.resize-handle-right {
+			grid-column: 5;
 			grid-row: 2;
 			cursor: row-resize;
+		}
+		.resize-handle-right::after {
+			inset: -3px 0;
 		}
 	}
 </style>
