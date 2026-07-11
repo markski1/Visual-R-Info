@@ -194,6 +194,9 @@ class Lexer {
 			case ',':
 				kind = TokenKind.Comma;
 				break;
+			case ';':
+				kind = TokenKind.Semicolon;
+				break;
 		}
 
 		if (kind === undefined) {

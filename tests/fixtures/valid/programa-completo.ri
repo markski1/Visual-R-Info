@@ -1,6 +1,6 @@
 programa ejemploCompleto
 procesos
-  proceso girar(E cantidad: numero)
+  proceso girar(E cantidad: numero; E veces: numero)
   comenzar
     repetir cantidad
       derecha
@@ -13,6 +13,7 @@ robots
     flores: numero
   comenzar
     flores:=0
+    girar(1,2)
     mientras (HayFlorEnLaEsquina)
       tomarFlor
       flores:=flores+1

@@ -127,7 +127,8 @@ describe('lex', () => {
 			'liberarEsquina',
 			'enviarMensaje',
 			'recibirMensaje',
-			':'
+			':',
+			';'
 		].join(' ');
 
 		expect(lex(source).tokens.map(({ kind }) => kind)).toEqual([
@@ -152,6 +153,7 @@ describe('lex', () => {
 			TokenKind.SendMessage,
 			TokenKind.ReceiveMessage,
 			TokenKind.Colon,
+			TokenKind.Semicolon,
 			TokenKind.EndOfFile
 		]);
 	});
@@ -165,7 +167,7 @@ describe('lex', () => {
 
 		expect(result.diagnostics).toEqual([]);
 		expect(result.tokens[0]).toMatchObject({ kind: TokenKind.Program, lexeme: 'programa' });
-		expect(result.tokens.filter(({ kind }) => kind === TokenKind.Colon)).toHaveLength(4);
+		expect(result.tokens.filter(({ kind }) => kind === TokenKind.Colon)).toHaveLength(5);
 		expect(result.tokens.at(-1)?.kind).toBe(TokenKind.EndOfFile);
 	});
 

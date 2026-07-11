@@ -82,6 +82,24 @@ export class Parser {
 		return this.current();
 	}
 
+	public isAt(kind: TokenKindType): boolean {
+		return this.at(kind);
+	}
+
+	public advanceToken(): Token {
+		return this.advance();
+	}
+
+	public addDiagnostic(token: Token, message: string, code = 'PAR001'): void {
+		this.diagnostics.push({
+			code,
+			phase: 'parser',
+			severity: 'error',
+			message,
+			span: token.span
+		});
+	}
+
 	private parseBinaryExpression(minimumPrecedence: number): Expression {
 		let left = this.parsePrefixExpression();
 
@@ -231,13 +249,7 @@ export class Parser {
 	}
 
 	private report(token: Token, message: string): void {
-		this.diagnostics.push({
-			code: 'PAR001',
-			phase: 'parser',
-			severity: 'error',
-			message,
-			span: token.span
-		});
+		this.addDiagnostic(token, message);
 	}
 
 	private at(kind: TokenKindType): boolean {

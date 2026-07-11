@@ -1,0 +1,28 @@
+programa cmreCompleto
+areas
+  compartida: AreaC(1,1,100,100)
+robots
+  robot emisor
+  variables
+    valor: numero
+  comenzar
+    Random(valor,1,10)
+    bloquearEsquina(1,1)
+    enviarMensaje(valor,R2)
+    liberarEsquina(1,1)
+  fin
+  robot receptor
+  variables
+    recibido: numero
+  comenzar
+    recibirMensaje(recibido,R1)
+  fin
+variables
+  R1: emisor
+  R2: receptor
+comenzar
+  AsignarArea(R1,compartida)
+  AsignarArea(R2,compartida)
+  Iniciar(R1,1,1)
+  Iniciar(R2,2,1)
+fin

@@ -66,7 +66,8 @@ export const TokenKind = {
 	Or: 'Or',
 	LeftParenthesis: 'LeftParenthesis',
 	RightParenthesis: 'RightParenthesis',
-	Comma: 'Comma'
+	Comma: 'Comma',
+	Semicolon: 'Semicolon'
 } as const;
 
 export type TokenKind = (typeof TokenKind)[keyof typeof TokenKind];

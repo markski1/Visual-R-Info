@@ -64,6 +64,103 @@ export type Expression =
 	| ErrorExpression;
 
 /** El ID es reproducible para el mismo tipo de nodo y el mismo rango de fuente. */
-export function createNodeId(kind: Expression['kind'], span: SourceSpan): string {
+export function createNodeId(kind: string, span: SourceSpan): string {
 	return `${kind}:${span.start.offset}:${span.end.offset}`;
+}
+
+export type RInfoPrimitiveType = 'numero' | 'boolean';
+export type ParameterMode = 'E' | 'S' | 'ES';
+export type AreaType = 'AreaC' | 'AreaP' | 'AreaPC';
+
+export interface IdentifierBinding {
+	readonly name: string;
+	readonly span: SourceSpan;
+}
+
+export interface VariableDeclaration extends BaseNode<'VariableDeclaration'> {
+	readonly names: readonly IdentifierBinding[];
+	readonly typeName: string;
+}
+
+export interface ParameterDeclaration extends BaseNode<'ParameterDeclaration'> {
+	readonly mode: ParameterMode;
+	readonly name: IdentifierBinding;
+	readonly typeName: RInfoPrimitiveType;
+}
+
+export interface ProcessDeclaration extends BaseNode<'ProcessDeclaration'> {
+	readonly name: IdentifierBinding;
+	readonly parameters: readonly ParameterDeclaration[];
+	readonly variables: readonly VariableDeclaration[];
+	readonly body: readonly Statement[];
+}
+
+export interface AreaDeclaration extends BaseNode<'AreaDeclaration'> {
+	readonly name: IdentifierBinding;
+	readonly areaType: AreaType;
+	readonly arguments: readonly Expression[];
+}
+
+export interface RobotDeclaration extends BaseNode<'RobotDeclaration'> {
+	readonly name: IdentifierBinding;
+	readonly variables: readonly VariableDeclaration[];
+	readonly body: readonly Statement[];
+}
+
+export interface AssignmentStatement extends BaseNode<'AssignmentStatement'> {
+	readonly target: IdentifierBinding;
+	readonly value: Expression;
+}
+
+export interface CallStatement extends BaseNode<'CallStatement'> {
+	readonly callee: IdentifierBinding;
+	readonly arguments: readonly Expression[];
+}
+
+export type RobotCommand =
+	'mover' | 'derecha' | 'tomarFlor' | 'tomarPapel' | 'depositarFlor' | 'depositarPapel';
+
+export interface RobotCommandStatement extends BaseNode<'RobotCommandStatement'> {
+	readonly command: RobotCommand;
+}
+
+export interface IfStatement extends BaseNode<'IfStatement'> {
+	readonly condition: Expression;
+	readonly thenBranch: readonly Statement[];
+	readonly elseBranch?: readonly Statement[];
+}
+
+export interface WhileStatement extends BaseNode<'WhileStatement'> {
+	readonly condition: Expression;
+	readonly body: readonly Statement[];
+}
+
+export interface RepeatStatement extends BaseNode<'RepeatStatement'> {
+	readonly count: Expression;
+	readonly body: readonly Statement[];
+}
+
+export interface BlockStatement extends BaseNode<'BlockStatement'> {
+	readonly statements: readonly Statement[];
+}
+
+export type ErrorStatement = BaseNode<'ErrorStatement'>;
+
+export type Statement =
+	| AssignmentStatement
+	| CallStatement
+	| RobotCommandStatement
+	| IfStatement
+	| WhileStatement
+	| RepeatStatement
+	| BlockStatement
+	| ErrorStatement;
+
+export interface ProgramNode extends BaseNode<'Program'> {
+	readonly name: IdentifierBinding;
+	readonly processes: readonly ProcessDeclaration[];
+	readonly areas: readonly AreaDeclaration[];
+	readonly robots: readonly RobotDeclaration[];
+	readonly variables: readonly VariableDeclaration[];
+	readonly body: readonly Statement[];
 }

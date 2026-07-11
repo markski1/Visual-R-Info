@@ -1,7 +1,7 @@
 /** Perfil estable que implementará el primer MVP. */
 export const RINFO_CORE_PROFILE = 'rinfo-core-v1' as const;
 
-/** Perfil futuro para Concurrent Multi Robot Environment; todavía no está implementado. */
+/** Perfil CMRE: el lenguaje se analiza; el scheduler concurrente pertenece al runtime futuro. */
 export const CMRE_PROFILE = 'cmre-v1' as const;
 
 export type LanguageProfile =
