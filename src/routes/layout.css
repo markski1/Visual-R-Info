@@ -49,6 +49,11 @@
 	--syntax-comment: #6a737d;
 	--syntax-selection: #d7d9df;
 	--syntax-active-line: #eef0f4;
+	--robot-1: #25735f;
+	--robot-2: #3366b0;
+	--robot-3: #a34f73;
+	--robot-4: #9a641c;
+	--robot-5: #7151a3;
 }
 
 .dark {
@@ -93,6 +98,11 @@
 	--syntax-comment: #a6a28c;
 	--syntax-selection: #41423a;
 	--syntax-active-line: #292a25;
+	--robot-1: #5fd4ae;
+	--robot-2: #75a7f0;
+	--robot-3: #ef83ae;
+	--robot-4: #e5ad5a;
+	--robot-5: #b99aef;
 }
 
 @theme inline {

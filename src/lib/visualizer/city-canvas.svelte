@@ -1,15 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { RuntimeSnapshot } from '$lib/runtime/index.js';
+	import type { Coordinate, RuntimeSnapshot } from '$lib/runtime/index.js';
 
 	let {
 		snapshot,
 		lastAction = 'Listo para ejecutar.',
-		theme
+		theme,
+		trail = [],
+		onselect
 	}: {
 		snapshot?: RuntimeSnapshot;
 		lastAction?: string;
 		theme: 'light' | 'dark' | 'system';
+		trail?: readonly { robotId: string; from: Coordinate; to: Coordinate }[];
+		onselect?: (coordinate: Coordinate) => void;
+	} = $props();
 	let canvas: HTMLCanvasElement;
 	let container: HTMLDivElement;
 	let context: CanvasRenderingContext2D | null = null;
@@ -42,13 +47,14 @@
 	});
 
 	$effect(() => {
-		syncAndDraw(snapshot, selected, theme);
+		syncAndDraw(snapshot, selected, theme, trail);
 	});
 
 	function syncAndDraw(
 		currentSnapshot: RuntimeSnapshot | undefined,
 		currentSelection: { avenue: number; street: number } | undefined,
-		currentTheme: 'light' | 'dark' | 'system'
+		currentTheme: 'light' | 'dark' | 'system',
+		currentTrail: readonly { robotId: string; from: Coordinate; to: Coordinate }[]
 	): void {
 		container.dataset.theme = currentTheme;
 		if (currentSnapshot === undefined) cameraInitialized = false;
@@ -59,12 +65,13 @@
 			scale = 16;
 			cameraInitialized = true;
 		}
-		draw(currentSnapshot, currentSelection);
+		draw(currentSnapshot, currentSelection, currentTrail);
 	}
 
 	function draw(
 		currentSnapshot: RuntimeSnapshot | undefined = snapshot,
-		currentSelection: { avenue: number; street: number } | undefined = selected
+		currentSelection: { avenue: number; street: number } | undefined = selected,
+		currentTrail: readonly { robotId: string; from: Coordinate; to: Coordinate }[] = trail
 	): void {
 		if (context === null || width === 0 || height === 0) return;
 		context.clearRect(0, 0, width, height);
@@ -110,9 +117,29 @@
 			);
 			context.fill();
 		}
+		drawTrail(currentSnapshot, currentTrail);
 		for (const [coordinate, contents] of currentSnapshot?.corners ?? [])
 			drawObjects(coordinate, contents);
-		for (const robot of currentSnapshot?.robots ?? []) drawRobot(robot.state);
+		for (const robot of currentSnapshot?.robots ?? []) drawRobot(robot, currentSnapshot);
+	}
+
+	function drawTrail(
+		currentSnapshot: RuntimeSnapshot | undefined,
+		currentTrail: readonly { robotId: string; from: Coordinate; to: Coordinate }[]
+	): void {
+		if (context === null) return;
+		context.save();
+		context.lineWidth = 3;
+		context.lineCap = 'round';
+		context.lineJoin = 'round';
+		for (const segment of currentTrail) {
+			context.strokeStyle = robotColor(segment.robotId, currentSnapshot);
+			context.beginPath();
+			context.moveTo(screenX(segment.from.avenue), screenY(segment.from.street));
+			context.lineTo(screenX(segment.to.avenue), screenY(segment.to.street));
+			context.stroke();
+		}
+		context.restore();
 	}
 
 	function drawObjects(
@@ -138,15 +165,21 @@
 		if (contents.papers > 1) context.fillText(String(contents.papers), x + 12, y - 5);
 	}
 
-	function drawRobot(robot: RuntimeSnapshot['robots'][number]['state']): void {
+	function drawRobot(
+		robot: RuntimeSnapshot['robots'][number],
+		currentSnapshot: RuntimeSnapshot | undefined
+	): void {
 		if (context === null) return;
-		const x = screenX(robot.position.avenue);
-		const y = screenY(robot.position.street);
+		const x = screenX(robot.state.position.avenue);
+		const y = screenY(robot.state.position.street);
 		const angles = { north: -Math.PI / 2, east: 0, south: Math.PI / 2, west: Math.PI };
 		context.save();
 		context.translate(x, y);
-		context.rotate(angles[robot.orientation]);
-		context.fillStyle = color(robot.status === 'failed' ? '--destructive' : '--primary');
+		context.rotate(angles[robot.state.orientation]);
+		context.fillStyle =
+			robot.state.status === 'failed'
+				? color('--destructive')
+				: robotColor(robot.id, currentSnapshot);
 		context.beginPath();
 		context.moveTo(12, 0);
 		context.lineTo(-8, -8);
@@ -193,6 +226,7 @@
 				avenue: Math.max(1, Math.min(100, Math.round(world.avenue))),
 				street: Math.max(1, Math.min(100, Math.round(world.street)))
 			};
+			onselect?.(selected);
 		}
 	}
 
@@ -214,6 +248,11 @@
 
 	function color(variable: string): string {
 		return getComputedStyle(container).getPropertyValue(variable).trim();
+	}
+
+	function robotColor(robotId: string, currentSnapshot: RuntimeSnapshot | undefined): string {
+		const index = Math.max(0, currentSnapshot?.robots.findIndex(({ id }) => id === robotId) ?? 0);
+		return color(`--robot-${(index % 5) + 1}`);
 	}
 </script>
 

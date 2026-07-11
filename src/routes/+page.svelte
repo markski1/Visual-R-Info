@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Bot, Check, Pause, Play, RotateCcw, StepForward, Terminal } from '@lucide/svelte';
 	import {
 		Bot,
 		Check,
@@ -31,9 +30,11 @@
 	} from '$lib/language/index.js';
 	import {
 		createRuntime,
+		type Coordinate,
 		type RInfoRuntime,
 		type RuntimeEvent,
-		type RuntimeSnapshot
+		type RuntimeSnapshot,
+		type ScenarioCorner
 	} from '$lib/runtime/index.js';
 
 	const SAMPLE = `programa recorrido
@@ -58,6 +59,8 @@ comenzar
   AsignarArea(Rinfo,ciudad)
   Iniciar(Rinfo,10,10)
 fin`;
+	const STORAGE_KEY = 'visual-r-info-workspace-v1';
+	type TrailSegment = { robotId: string; from: Coordinate; to: Coordinate };
 
 	let source = $state(SAMPLE);
 	let analysis: AnalysisResult = $state(analyze(SAMPLE));
@@ -74,7 +77,17 @@ fin`;
 	let workspace: HTMLElement;
 	let fileInput: HTMLInputElement;
 	let settingsDialog: HTMLDialogElement;
+	let welcomeDialog: HTMLDialogElement;
 	let executionDelay = $state(140);
+	let scenarioCorners: ScenarioCorner[] = $state([]);
+	let trail: TrailSegment[] = $state([]);
+	let selectedCoordinate = $state<Coordinate>({ avenue: 1, street: 1 });
+	let avenueInput = $state('1');
+	let streetInput = $state('1');
+	let objectKind: 'flower' | 'paper' = $state('flower');
+	let objectQuantity = $state(1);
+	let storageReady = $state(false);
+	let storageTimer: ReturnType<typeof setTimeout> | undefined;
 	type Theme = 'light' | 'dark' | 'system';
 	let theme: Theme = $state('system');
 	const themeOptions = [
@@ -106,12 +119,27 @@ fin`;
 	const executionFinished = $derived(
 		snapshot !== undefined && runtime?.state.status === 'finished'
 	);
+	const scenarioEditable = $derived(snapshot === undefined || snapshot.stepCount === 0);
 
 	$effect(() => {
 		scheduleAnalysis(source);
 	});
 
+	$effect(() => {
+		const currentSource = source;
+		const currentCorners = scenarioCorners;
+		if (!storageReady) return;
+		clearTimeout(storageTimer);
+		storageTimer = setTimeout(() => {
+			localStorage.setItem(
+				STORAGE_KEY,
+				JSON.stringify({ source: currentSource, corners: currentCorners })
+			);
+		}, 300);
+	});
+
 	onMount(() => {
+		restoreWorkspace();
 		const savedTheme = localStorage.getItem('visual-r-info-theme');
 		if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
 			theme = savedTheme;
@@ -122,6 +150,7 @@ fin`;
 		};
 		media.addEventListener('change', followSystemTheme);
 		applyTheme(theme);
+		welcomeDialog.showModal();
 		return () => media.removeEventListener('change', followSystemTheme);
 	});
 
@@ -134,6 +163,7 @@ fin`;
 			stopExecution();
 			runtime = undefined;
 			snapshot = undefined;
+			trail = [];
 			activeSpan = undefined;
 			runtimeError = '';
 			statusMessage = analysis.program
@@ -145,12 +175,15 @@ fin`;
 	onDestroy(() => {
 		clearTimeout(analysisTimer);
 		clearTimeout(executionTimer);
+		clearTimeout(storageTimer);
 	});
 
 	function validate(): void {
 		clearTimeout(analysisTimer);
+		const sourceChanged = analyzedSource !== source;
 		analysis = analyze(source);
 		analyzedSource = source;
+		if (sourceChanged) clearRuntime();
 		statusMessage = analysis.program
 			? 'No encontramos errores. El programa está listo.'
 			: `Encontramos ${analysis.diagnostics.length} problema${analysis.diagnostics.length === 1 ? '' : 's'}.`;
@@ -159,13 +192,15 @@ fin`;
 	}
 
 	function prepareRuntime(): RInfoRuntime | undefined {
-		if (runtime !== undefined) return runtime;
+		if (runtime !== undefined && analyzedSource === source) return runtime;
+		if (analyzedSource !== source) clearRuntime();
 		analysis = analyze(source);
+		analyzedSource = source;
 		if (analysis.program === undefined) {
 			statusMessage = 'Corregí los errores antes de ejecutar.';
 			return undefined;
 		}
-		const created = createRuntime(analysis.program);
+		const created = createRuntime(analysis.program, { corners: scenarioCorners });
 		if (!created.ok) {
 			runtimeError = created.error.message;
 			statusMessage = 'No se pudo preparar la ejecución.';
@@ -180,14 +215,25 @@ fin`;
 	function step(): void {
 		stopExecution();
 		const prepared = prepareRuntime();
-		if (prepared === undefined) return;
+		if (
+			prepared === undefined ||
+			prepared.state.status === 'finished' ||
+			prepared.state.status === 'failed'
+		)
+			return;
 		handleEvents(prepared.step());
 		snapshot = prepared.getSnapshot();
 	}
 
 	function run(): void {
 		const prepared = prepareRuntime();
-		if (prepared === undefined || running) return;
+		if (
+			prepared === undefined ||
+			running ||
+			prepared.state.status === 'finished' ||
+			prepared.state.status === 'failed'
+		)
+			return;
 		running = true;
 		statusMessage = 'Ejecutando…';
 		const tick = () => {
@@ -217,6 +263,7 @@ fin`;
 		}
 		runtime.reset();
 		snapshot = runtime.getSnapshot();
+		trail = [];
 		activeSpan = undefined;
 		runtimeError = '';
 		statusMessage = 'Ejecución reiniciada.';
@@ -234,6 +281,7 @@ fin`;
 				editor.reveal(event.span);
 				statusMessage = `Ejecutando línea ${event.span.start.line}.`;
 			} else if (event.kind === 'robot-moved') {
+				trail = [...trail, { robotId: event.robotId, from: event.from, to: event.to }];
 				statusMessage = `El robot avanzó hasta (${event.to.avenue}, ${event.to.street}).`;
 			} else if (event.kind === 'robot-turned') {
 				statusMessage = 'El robot giró a la derecha.';
@@ -306,6 +354,8 @@ fin`;
 			return;
 		}
 		source = await file.text();
+		scenarioCorners = [];
+		trail = [];
 		runtimeError = '';
 		statusMessage = `Archivo ${file.name} cargado.`;
 		fileInput.value = '';
@@ -321,8 +371,152 @@ fin`;
 		void loadFile(event.dataTransfer.files[0]);
 	}
 
+	function selectCoordinate(coordinate: Coordinate): void {
+		selectedCoordinate = coordinate;
+		avenueInput = String(coordinate.avenue);
+		streetInput = String(coordinate.street);
+	}
+
+	function addObjects(): void {
+		if (!scenarioEditable) {
+			runtimeError = 'Reiniciá la ejecución antes de modificar los objetos de la ciudad.';
+			return;
+		}
+		const avenues = coordinateRange(avenueInput);
+		const streets = coordinateRange(streetInput);
+		if (avenues === undefined || streets === undefined) {
+			runtimeError = 'La avenida y la calle deben ser números entre 1 y 100, o *.';
+			return;
+		}
+		if (avenueInput.trim() === '*' && streetInput.trim() === '*') {
+			runtimeError = 'Usá * sólo en la avenida o en la calle, no en ambas a la vez.';
+			return;
+		}
+		if (!Number.isSafeInteger(objectQuantity) || objectQuantity < 1) {
+			runtimeError = 'La cantidad debe ser un entero mayor que cero.';
+			return;
+		}
+
+		const corners = scenarioCorners.map((corner) => ({
+			coordinate: { ...corner.coordinate },
+			contents: { ...corner.contents }
+		}));
+		for (const avenue of avenues) {
+			for (const street of streets) {
+				const index = corners.findIndex(
+					(corner) => corner.coordinate.avenue === avenue && corner.coordinate.street === street
+				);
+				const current = corners[index] ?? {
+					coordinate: { avenue, street },
+					contents: { flowers: 0, papers: 0 }
+				};
+				const updated = {
+					coordinate: current.coordinate,
+					contents: {
+						flowers: current.contents.flowers + (objectKind === 'flower' ? objectQuantity : 0),
+						papers: current.contents.papers + (objectKind === 'paper' ? objectQuantity : 0)
+					}
+				};
+				if (index === -1) corners.push(updated);
+				else corners[index] = updated;
+			}
+		}
+		scenarioCorners = corners;
+		rebuildRuntime();
+		runtimeError = '';
+		const objectName = objectKind === 'flower' ? 'flores' : 'papeles';
+		statusMessage = `${objectQuantity} ${objectName} agregados al escenario.`;
+	}
+
+	function coordinateRange(value: string): readonly number[] | undefined {
+		if (value.trim() === '*') return Array.from({ length: 100 }, (_, index) => index + 1);
+		const coordinate = Number(value);
+		if (!Number.isInteger(coordinate) || coordinate < 1 || coordinate > 100) return undefined;
+		return [coordinate];
+	}
+
+	function rebuildRuntime(): void {
+		clearRuntime();
+		prepareRuntime();
+	}
+
+	function clearRuntime(): void {
+		stopExecution();
+		runtime = undefined;
+		snapshot = undefined;
+		activeSpan = undefined;
+		trail = [];
+	}
+
+	function loadExample(): void {
+		source = SAMPLE;
+		scenarioCorners = [];
+		rebuildRuntime();
+		settingsDialog.close();
+		statusMessage = 'Programa de ejemplo cargado.';
+	}
+
+	function handleShortcut(event: KeyboardEvent): void {
+		if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.repeat) return;
+		if (settingsDialog.open || welcomeDialog.open) return;
+		const key = event.key.toLocaleLowerCase();
+		if (!['e', 'p', 'r', 's', 'o'].includes(key)) return;
+		event.preventDefault();
+		if (key === 'e') {
+			if (running) pause();
+			else run();
+		} else if (key === 'p') step();
+		else if (key === 'r') reset();
+		else if (key === 's') saveFile();
+		else fileInput.click();
+	}
+
+	function restoreWorkspace(): void {
+		const stored = localStorage.getItem(STORAGE_KEY);
+		if (stored !== null) {
+			try {
+				const workspace = JSON.parse(stored) as { source?: unknown; corners?: unknown };
+				if (typeof workspace.source === 'string') source = workspace.source;
+				if (isStoredCorners(workspace.corners)) scenarioCorners = workspace.corners;
+			} catch {
+				localStorage.removeItem(STORAGE_KEY);
+			}
+		}
+		storageReady = true;
+		queueMicrotask(rebuildRuntime);
+	}
+
+	function isStoredCorners(value: unknown): value is ScenarioCorner[] {
+		return (
+			Array.isArray(value) &&
+			value.every((corner: unknown) => {
+				if (typeof corner !== 'object' || corner === null) return false;
+				const candidate = corner as {
+					coordinate?: { avenue?: unknown; street?: unknown };
+					contents?: { flowers?: unknown; papers?: unknown };
+				};
+				return (
+					Number.isInteger(candidate.coordinate?.avenue) &&
+					Number.isInteger(candidate.coordinate?.street) &&
+					Number.isInteger(candidate.contents?.flowers) &&
+					Number.isInteger(candidate.contents?.papers) &&
+					(candidate.coordinate?.avenue as number) >= 1 &&
+					(candidate.coordinate?.avenue as number) <= 100 &&
+					(candidate.coordinate?.street as number) >= 1 &&
+					(candidate.coordinate?.street as number) <= 100 &&
+					(candidate.contents?.flowers as number) >= 0 &&
+					(candidate.contents?.papers as number) >= 0
+				);
+			})
+		);
+	}
+
 	function closeSettingsFromBackdrop(event: MouseEvent): void {
 		if (event.target === event.currentTarget) settingsDialog.close();
+	}
+
+	function closeWelcomeFromBackdrop(event: MouseEvent): void {
+		if (event.target === event.currentTarget) welcomeDialog.close();
 	}
 
 	function applyTheme(nextTheme: Theme): void {
@@ -335,7 +529,7 @@ fin`;
 	}
 </script>
 
-<svelte:window ondragover={allowFileDrop} ondrop={dropFile} />
+<svelte:window ondragover={allowFileDrop} ondrop={dropFile} onkeydown={handleShortcut} />
 
 <svelte:head><title>Visual R-Info</title></svelte:head>
 
@@ -415,7 +609,13 @@ fin`;
 				>
 			</div>
 			<div class="h-[calc(100%-2.25rem)]">
-				<CityCanvas {snapshot} lastAction={statusMessage} {theme} />
+				<CityCanvas
+					{snapshot}
+					lastAction={statusMessage}
+					{theme}
+					{trail}
+					onselect={selectCoordinate}
+				/>
 			</div>
 		</section>
 
@@ -486,6 +686,69 @@ fin`;
 			{:else}<p class="text-muted-foreground text-xs">
 					Ejecutá o avanzá un paso para inspeccionar el robot.
 				</p>{/if}
+			<section class="border-border mt-4 space-y-3 border-t pt-3">
+				<div>
+					<h3 class="text-xs font-semibold">Objetos en la ciudad</h3>
+					<p class="text-muted-foreground mt-1 text-[11px]">
+						Esquina seleccionada: {selectedCoordinate.avenue}, {selectedCoordinate.street}. Usá *
+						para completar una avenida o calle entera.
+					</p>
+					{#if !scenarioEditable}
+						<p class="text-destructive mt-1 text-[11px]">
+							Reiniciá la ejecución para volver a editar el escenario.
+						</p>
+					{/if}
+				</div>
+				<div class="grid grid-cols-2 gap-2">
+					<label class="space-y-1 text-[11px]">
+						<span class="text-muted-foreground">Elemento</span>
+						<select
+							bind:value={objectKind}
+							disabled={!scenarioEditable}
+							class="border-input bg-background h-8 w-full border px-2 text-xs"
+						>
+							<option value="flower">Flores</option>
+							<option value="paper">Papeles</option>
+						</select>
+					</label>
+					<label class="space-y-1 text-[11px]">
+						<span class="text-muted-foreground">Cantidad</span>
+						<input
+							type="number"
+							min="1"
+							step="1"
+							bind:value={objectQuantity}
+							disabled={!scenarioEditable}
+							class="border-input bg-background h-8 w-full border px-2 text-xs"
+						/>
+					</label>
+					<label class="space-y-1 text-[11px]">
+						<span class="text-muted-foreground">Avenida</span>
+						<input
+							inputmode="numeric"
+							bind:value={avenueInput}
+							disabled={!scenarioEditable}
+							class="border-input bg-background h-8 w-full border px-2 text-xs"
+						/>
+					</label>
+					<label class="space-y-1 text-[11px]">
+						<span class="text-muted-foreground">Calle</span>
+						<input
+							inputmode="numeric"
+							bind:value={streetInput}
+							disabled={!scenarioEditable}
+							class="border-input bg-background h-8 w-full border px-2 text-xs"
+						/>
+					</label>
+				</div>
+				<Button
+					variant="outline"
+					size="sm"
+					class="w-full"
+					disabled={!scenarioEditable}
+					onclick={addObjects}>Agregar</Button
+				>
+			</section>
 		</aside>
 
 		<div
@@ -580,6 +843,17 @@ fin`;
 					Un intervalo menor hace que la ejecución automática avance más rápido.
 				</p>
 			</section>
+			<section
+				class="bg-muted/50 border-border flex items-center justify-between gap-4 rounded-md border p-4"
+			>
+				<div>
+					<h3 class="text-sm font-semibold">Programa de ejemplo</h3>
+					<p class="text-muted-foreground mt-1 text-xs">
+						Restaura el código y la ciudad iniciales.
+					</p>
+				</div>
+				<Button variant="outline" size="sm" onclick={loadExample}>Cargar ejemplo</Button>
+			</section>
 			<section class="bg-primary text-primary-foreground space-y-3 rounded-md p-4">
 				<div>
 					<h3 class="font-heading text-base font-bold">Visual R-Info</h3>
@@ -589,7 +863,7 @@ fin`;
 				</div>
 				<p class="text-sm leading-relaxed">
 					Basado en el lenguaje y el entorno educativo R-Info de la Facultad de Informática de la
-					UNLP.<br>Desarrollado por Markski en TypeScript con SvelteKit.<br>Integra CodeMirror
+					UNLP.<br />Desarrollado por Markski en TypeScript con SvelteKit.<br />Integra CodeMirror
 					como editor de código y una interfaz construida con Tailwind CSS y shadcn-svelte.
 				</p>
 				<div class="flex flex-wrap gap-2">
@@ -615,7 +889,47 @@ fin`;
 						rel="noreferrer"><ExternalLink /> Guía IAI 2021</Button
 					>
 				</div>
+				<p class="text-sm leading-relaxed">
+					Email: <a href="mailto:me@markski.ar">me@markski.ar</a><br />
+					Discord: markski.ar
+				</p>
 			</section>
+		</div>
+	</dialog>
+
+	<dialog
+		bind:this={welcomeDialog}
+		class="bg-popover text-popover-foreground border-border m-auto w-[min(32rem,calc(100%-2rem))] rounded-lg border p-0 shadow-2xl backdrop:bg-black/50"
+		onclick={closeWelcomeFromBackdrop}
+	>
+		<div class="space-y-5 p-6">
+			<div class="space-y-2">
+				<h2 class="font-heading text-lg font-bold">Bienvenido a Visual R-Info</h2>
+				<p class="text-muted-foreground text-sm leading-relaxed">
+					Un entorno web para escribir y ejecutar programas R-Info, observar la ciudad y seguir el
+					recorrido de los robots paso a paso. Tu trabajo se guarda automáticamente en este
+					navegador.
+				</p>
+			</div>
+			<section class="bg-muted/50 border-border rounded-md border p-4">
+				<h3 class="mb-3 text-sm font-semibold">Atajos de teclado</h3>
+				<dl class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-xs">
+					<dt><kbd>Ctrl E</kbd></dt>
+					<dd>Ejecutar o pausar</dd>
+					<dt><kbd>Ctrl P</kbd></dt>
+					<dd>Avanzar un paso</dd>
+					<dt><kbd>Ctrl R</kbd></dt>
+					<dd>Reiniciar la ejecución</dd>
+					<dt><kbd>Ctrl S</kbd></dt>
+					<dd>Guardar el archivo .ri</dd>
+					<dt><kbd>Ctrl O</kbd></dt>
+					<dd>Abrir un archivo .ri</dd>
+				</dl>
+			</section>
+			<p class="text-muted-foreground text-xs">
+				Basado en R-Info, el entorno educativo de la Facultad de Informática de la UNLP.
+			</p>
+			<Button class="w-full" onclick={() => welcomeDialog.close()}>Empezar</Button>
 		</div>
 	</dialog>
 </main>
@@ -639,6 +953,14 @@ fin`;
 
 	.execution-speed::-moz-range-thumb {
 		border-radius: 0;
+	}
+
+	kbd {
+		border: 1px solid var(--border);
+		background: var(--background);
+		padding: 0.125rem 0.375rem;
+		font-family: var(--font-mono);
+		box-shadow: 0 1px 0 var(--border);
 	}
 
 	@media (min-width: 64rem) {

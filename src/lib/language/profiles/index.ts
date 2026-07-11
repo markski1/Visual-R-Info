@@ -1,4 +1,4 @@
-/** Perfil estable que implementará el primer MVP. */
+/** Perfil estable del lenguaje R-Info. */
 export const RINFO_CORE_PROFILE = 'rinfo-core-v1' as const;
 
 /** CMRE: Concurrent Multi Robot Environment, con scheduler determinista en el runtime. */

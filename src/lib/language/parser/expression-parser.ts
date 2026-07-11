@@ -52,7 +52,7 @@ export function parseExpression(tokens: readonly Token[]): ExpressionParseResult
 	return { expression, diagnostics: parser.getDiagnostics() };
 }
 
-/** Cursor compartido por las expresiones y, progresivamente, el resto del programa. */
+/** Cursor compartido por los analizadores de expresiones y de programas. */
 export class Parser {
 	private index = 0;
 	private readonly diagnostics: Diagnostic[] = [];
@@ -66,7 +66,7 @@ export class Parser {
 		return this.parseBinaryExpression(1);
 	}
 
-	/** Solo lo usa el wrapper que analiza una expresión aislada. */
+	/** Comprueba tokens sobrantes al analizar una expresión aislada. */
 	public reportTrailingTokens(): void {
 		while (!this.at(TokenKind.EndOfFile)) {
 			const token = this.advance();

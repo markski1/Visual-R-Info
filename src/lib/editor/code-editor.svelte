@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { autocompletion, type CompletionContext } from '@codemirror/autocomplete';
+	import {
+		acceptCompletion,
+		autocompletion,
+		type CompletionContext
+	} from '@codemirror/autocomplete';
 	import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 	import { bracketMatching } from '@codemirror/language';
 	import { setDiagnostics, type Diagnostic as CmDiagnostic } from '@codemirror/lint';
@@ -160,7 +164,12 @@
 				bracketMatching(),
 				syntaxColors,
 				activeLine,
-				keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+				keymap.of([
+					{ key: 'Tab', run: acceptCompletion },
+					...defaultKeymap,
+					...historyKeymap,
+					indentWithTab
+				]),
 				autocompletion({ override: [completeRInfo] }),
 				EditorView.lineWrapping,
 				EditorView.updateListener.of((update) => {
@@ -174,14 +183,17 @@
 						color: 'var(--syntax-foreground)'
 					},
 					'.cm-editor, .cm-scroller': { backgroundColor: 'var(--syntax-background)' },
-					'.cm-cursor, .cm-dropCursor': {
+					'&.cm-focused .cm-cursor, &.cm-focused .cm-dropCursor': {
 						borderLeftColor: 'var(--syntax-foreground) !important'
 					},
 					'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
 						backgroundColor: 'var(--syntax-selection)'
 					},
 					'.cm-scroller': { fontFamily: '"JetBrains Mono", "Cascadia Code", monospace' },
-					'.cm-content': { padding: '12px 0' },
+					'.cm-content': {
+						padding: '12px 0',
+						caretColor: 'var(--syntax-foreground)'
+					},
 					'.cm-gutters': {
 						backgroundColor: 'var(--syntax-background)',
 						color: 'var(--syntax-comment)',
