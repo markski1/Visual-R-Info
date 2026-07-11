@@ -59,6 +59,16 @@ describe('ejecutor', () => {
 			status: 'finished'
 		});
 		expect(created.value.state.city.get({ avenue: 2, street: 3 }).flowers).toBe(1);
+		expect(created.value.getSnapshot().areas).toEqual([
+			{
+				name: 'ciudad',
+				type: 'AreaC',
+				minAvenue: 1,
+				minStreet: 1,
+				maxAvenue: 100,
+				maxStreet: 100
+			}
+		]);
 		expect(created.value.state.output).toEqual([7]);
 		expect(result.events.map(({ kind }) => kind)).toEqual(
 			expect.arrayContaining([

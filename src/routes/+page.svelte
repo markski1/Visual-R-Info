@@ -87,6 +87,7 @@ fin`;
 	let objectKind: 'flower' | 'paper' = $state('flower');
 	let objectQuantity = $state(1);
 	let storageReady = $state(false);
+	let shortcutModifier = $state('Alt');
 	let storageTimer: ReturnType<typeof setTimeout> | undefined;
 	type Theme = 'light' | 'dark' | 'system';
 	let theme: Theme = $state('system');
@@ -97,8 +98,8 @@ fin`;
 	] as const;
 	let splitX = $state(36);
 	let splitCity = $state(72);
-	let splitY = $state(58);
-	let resizeAxis: 'editor' | 'city' | 'right' | undefined;
+	let splitY = $state(84);
+	let resizeAxis: 'editor' | 'city' | 'diagnostics' | undefined;
 
 	const orientationLabels = {
 		north: 'Norte',
@@ -106,6 +107,7 @@ fin`;
 		south: 'Sur',
 		west: 'Oeste'
 	} as const;
+	const orientationDegrees = { north: -90, east: 0, south: 90, west: 180 } as const;
 	const statusLabels = {
 		ready: 'Listo',
 		running: 'Ejecutando',
@@ -115,11 +117,34 @@ fin`;
 	} as const;
 
 	const errors = $derived(analysis.diagnostics.filter(({ severity }) => severity === 'error'));
-	const selectedRobot = $derived(snapshot?.robots[0]);
 	const executionFinished = $derived(
 		snapshot !== undefined && runtime?.state.status === 'finished'
 	);
+	const executionStarted = $derived(
+		snapshot !== undefined &&
+			(snapshot.stepCount > 0 || snapshot.status === 'finished' || snapshot.status === 'failed')
+	);
 	const scenarioEditable = $derived(snapshot === undefined || snapshot.stepCount === 0);
+	const editorColorMarkers = $derived.by(() => {
+		const program = analysis.program;
+		if (program === undefined) return [];
+		const areas = program.ast.areas.map((area, colorIndex) => ({
+			offset: area.name.span.end.offset,
+			kind: 'area' as const,
+			colorIndex
+		}));
+		const robots = program.ast.variables
+			.filter((declaration) =>
+				program.ast.robots.some((robot) => robot.name.name === declaration.typeName)
+			)
+			.flatMap((declaration) => declaration.names)
+			.map((robot, colorIndex) => ({
+				offset: robot.span.end.offset,
+				kind: 'robot' as const,
+				colorIndex
+			}));
+		return [...areas, ...robots].sort((left, right) => left.offset - right.offset);
+	});
 
 	$effect(() => {
 		scheduleAnalysis(source);
@@ -140,6 +165,7 @@ fin`;
 
 	onMount(() => {
 		restoreWorkspace();
+		shortcutModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌥' : 'Alt';
 		const savedTheme = localStorage.getItem('visual-r-info-theme');
 		if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
 			theme = savedTheme;
@@ -256,17 +282,11 @@ fin`;
 	}
 
 	function reset(): void {
-		stopExecution();
-		if (runtime === undefined) {
-			prepareRuntime();
-			return;
-		}
-		runtime.reset();
-		snapshot = runtime.getSnapshot();
-		trail = [];
-		activeSpan = undefined;
+		scenarioCorners = [];
+		clearRuntime();
+		prepareRuntime();
 		runtimeError = '';
-		statusMessage = 'Ejecución reiniciada.';
+		statusMessage = 'Ejecución reiniciada y objetos manuales eliminados.';
 	}
 
 	function stopExecution(): void {
@@ -300,7 +320,7 @@ fin`;
 		if (diagnostic.span !== undefined) editor.reveal(diagnostic.span);
 	}
 
-	function startResize(axis: 'editor' | 'city' | 'right', event: PointerEvent): void {
+	function startResize(axis: 'editor' | 'city' | 'diagnostics', event: PointerEvent): void {
 		resizeAxis = axis;
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 	}
@@ -323,8 +343,8 @@ fin`;
 			splitCity = (pixels / bounds.width) * 100;
 		} else {
 			const pixels = Math.min(
-				Math.max(180, bounds.height - 146),
-				Math.max(180, event.clientY - bounds.top)
+				Math.max(240, bounds.height - 78),
+				Math.max(240, event.clientY - bounds.top)
 			);
 			splitY = (pixels / bounds.height) * 100;
 		}
@@ -457,9 +477,11 @@ fin`;
 	}
 
 	function handleShortcut(event: KeyboardEvent): void {
-		if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.repeat) return;
+		if (!event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
 		if (settingsDialog.open || welcomeDialog.open) return;
-		const key = event.key.toLocaleLowerCase();
+		const key = event.code.startsWith('Key')
+			? event.code.slice(3).toLocaleLowerCase()
+			: event.key.toLocaleLowerCase();
 		if (!['e', 'p', 'r', 's', 'o'].includes(key)) return;
 		event.preventDefault();
 		if (key === 'e') {
@@ -561,7 +583,11 @@ fin`;
 				><FolderOpen /> Abrir</Button
 			>
 			<Button variant="ghost" size="sm" onclick={saveFile}><Save /> Guardar</Button>
-			<Button variant="outline" size="sm" onclick={validate}><Check /> Validar</Button>
+			{#if executionStarted}
+				<Button variant="outline" size="sm" onclick={reset}><RotateCcw /> Reset</Button>
+			{:else}
+				<Button variant="outline" size="sm" onclick={validate}><Check /> Validar</Button>
+			{/if}
 			<Button
 				variant={running ? 'secondary' : 'default'}
 				size="sm"
@@ -569,10 +595,12 @@ fin`;
 				disabled={!running && (errors.length > 0 || executionFinished)}
 				>{#if running}<Pause /> Pausar{:else}<Play /> Ejecutar{/if}</Button
 			>
-			<Button variant="outline" size="sm" onclick={step} disabled={running || errors.length > 0}
-				><StepForward /> Paso</Button
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={step}
+				disabled={running || errors.length > 0 || executionFinished}><StepForward /> Paso</Button
 			>
-			<Button variant="ghost" size="sm" onclick={reset}><RotateCcw /> Reset</Button>
 		</div>
 	</header>
 
@@ -596,6 +624,7 @@ fin`;
 					value={source}
 					diagnostics={analysis.diagnostics}
 					{activeSpan}
+					colorMarkers={editorColorMarkers}
 					onchange={(next) => (source = next)}
 				/>
 			</div>
@@ -660,28 +689,41 @@ fin`;
 			<div class="mb-3 flex items-center gap-2 text-xs font-semibold">
 				<Bot size={14} /> Inspector
 			</div>
-			{#if selectedRobot}
-				<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-					<dt class="text-muted-foreground">Robot</dt>
-					<dd class="font-medium">{selectedRobot.id}</dd>
-					<dt class="text-muted-foreground">Posición</dt>
-					<dd>({selectedRobot.state.position.avenue}, {selectedRobot.state.position.street})</dd>
-					<dt class="text-muted-foreground">Orientación</dt>
-					<dd>{orientationLabels[selectedRobot.state.orientation]}</dd>
-					<dt class="text-muted-foreground">Estado</dt>
-					<dd>{statusLabels[selectedRobot.state.status]}</dd>
-					<dt class="text-muted-foreground">Bolsa</dt>
-					<dd>🌸 {selectedRobot.state.bag.flowers} · 📄 {selectedRobot.state.bag.papers}</dd>
-				</dl>
-				<div class="border-border mt-4 border-t pt-3">
-					<p class="text-muted-foreground mb-2 text-[11px] font-semibold tracking-wide uppercase">
-						Variables
-					</p>
-					{#each Object.entries(selectedRobot.variables) as [name, value] (name)}
-						<div class="flex justify-between py-1 font-mono text-xs">
-							<span>{name}</span><span>{String(value)}</span>
-						</div>
-					{:else}<p class="text-muted-foreground text-xs">Sin variables.</p>{/each}
+			{#if snapshot?.robots.length}
+				<div class="space-y-3">
+					{#each snapshot.robots as robot, robotIndex (robot.id)}
+						<section class="border-border bg-muted/35 rounded-md border p-3">
+							<div class="mb-3 flex items-center gap-2">
+								<span
+									class="robot-preview"
+									style={`--robot-color: var(--robot-${(robotIndex % 5) + 1}); transform: rotate(${orientationDegrees[robot.state.orientation]}deg);`}
+								></span>
+								<span class="text-xs font-semibold">{robot.id}</span>
+							</div>
+							<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+								<dt class="text-muted-foreground">Posición</dt>
+								<dd>({robot.state.position.avenue}, {robot.state.position.street})</dd>
+								<dt class="text-muted-foreground">Orientación</dt>
+								<dd>{orientationLabels[robot.state.orientation]}</dd>
+								<dt class="text-muted-foreground">Estado</dt>
+								<dd>{statusLabels[robot.state.status]}</dd>
+								<dt class="text-muted-foreground">Bolsa</dt>
+								<dd>🌸 {robot.state.bag.flowers} · 📄 {robot.state.bag.papers}</dd>
+							</dl>
+							<div class="border-border mt-3 border-t pt-2">
+								<p
+									class="text-muted-foreground mb-1 text-[10px] font-semibold tracking-wide uppercase"
+								>
+									Variables
+								</p>
+								{#each Object.entries(robot.variables) as [name, value] (name)}
+									<div class="flex justify-between py-1 font-mono text-xs">
+										<span>{name}</span><span>{String(value)}</span>
+									</div>
+								{:else}<p class="text-muted-foreground text-xs">Sin variables.</p>{/each}
+							</div>
+						</section>
+					{/each}
 				</div>
 			{:else}<p class="text-muted-foreground text-xs">
 					Ejecutá o avanzá un paso para inspeccionar el robot.
@@ -765,11 +807,11 @@ fin`;
 			onpointerup={stopResize}
 		></div>
 		<div
-			class="resize-handle resize-handle-right"
+			class="resize-handle resize-handle-diagnostics"
 			role="separator"
 			aria-label="Cambiar alto de los paneles"
 			aria-orientation="horizontal"
-			onpointerdown={(event) => startResize('right', event)}
+			onpointerdown={(event) => startResize('diagnostics', event)}
 			onpointermove={resize}
 			onpointerup={stopResize}
 		></div>
@@ -909,15 +951,15 @@ fin`;
 			<section class="bg-muted/50 border-border rounded-md border p-4">
 				<h3 class="mb-3 text-sm font-semibold">Atajos de teclado</h3>
 				<dl class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-xs">
-					<dt><kbd>Ctrl E</kbd></dt>
+					<dt><kbd>{shortcutModifier} E</kbd></dt>
 					<dd>Ejecutar o pausar</dd>
-					<dt><kbd>Ctrl P</kbd></dt>
+					<dt><kbd>{shortcutModifier} P</kbd></dt>
 					<dd>Avanzar un paso</dd>
-					<dt><kbd>Ctrl R</kbd></dt>
+					<dt><kbd>{shortcutModifier} R</kbd></dt>
 					<dd>Reiniciar la ejecución</dd>
-					<dt><kbd>Ctrl S</kbd></dt>
+					<dt><kbd>{shortcutModifier} S</kbd></dt>
 					<dd>Guardar el archivo .ri</dd>
-					<dt><kbd>Ctrl O</kbd></dt>
+					<dt><kbd>{shortcutModifier} O</kbd></dt>
 					<dd>Abrir un archivo .ri</dd>
 				</dl>
 			</section>
@@ -958,6 +1000,15 @@ fin`;
 		box-shadow: 0 1px 0 var(--border);
 	}
 
+	.robot-preview {
+		display: inline-block;
+		width: 1rem;
+		height: 0.75rem;
+		background: var(--robot-color);
+		clip-path: polygon(100% 50%, 0 0, 22% 50%, 0 100%);
+		transform-origin: center;
+	}
+
 	@media (min-width: 64rem) {
 		:global(html),
 		:global(body) {
@@ -969,25 +1020,25 @@ fin`;
 				minmax(360px, var(--split-x)) 6px
 				minmax(300px, calc(var(--split-city) - var(--split-x) - 6px)) 6px
 				minmax(280px, 1fr);
-			grid-template-rows: minmax(180px, var(--split-y)) 6px minmax(140px, 1fr);
+			grid-template-rows: minmax(240px, var(--split-y)) 6px minmax(72px, 1fr);
 			gap: 0;
 			overflow: hidden;
 		}
 		.panel-editor {
 			grid-column: 1;
-			grid-row: 1 / 4;
+			grid-row: 1;
 		}
 		.panel-city {
 			grid-column: 3;
 			grid-row: 1 / 4;
 		}
 		.panel-diagnostics {
-			grid-column: 5;
+			grid-column: 1;
 			grid-row: 3;
 		}
 		.panel-inspector {
 			grid-column: 5;
-			grid-row: 1;
+			grid-row: 1 / 4;
 		}
 		.resize-handle {
 			display: block;
@@ -1016,12 +1067,12 @@ fin`;
 			grid-row: 1 / 4;
 			cursor: col-resize;
 		}
-		.resize-handle-right {
-			grid-column: 5;
+		.resize-handle-diagnostics {
+			grid-column: 1;
 			grid-row: 2;
 			cursor: row-resize;
 		}
-		.resize-handle-right::after {
+		.resize-handle-diagnostics::after {
 			inset: -3px 0;
 		}
 	}

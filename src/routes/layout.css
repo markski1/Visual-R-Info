@@ -54,6 +54,11 @@
 	--robot-3: #a34f73;
 	--robot-4: #9a641c;
 	--robot-5: #7151a3;
+	--area-1: #174c3e;
+	--area-2: #243f73;
+	--area-3: #71324d;
+	--area-4: #67420f;
+	--area-5: #49326f;
 }
 
 .dark {
@@ -103,6 +108,11 @@
 	--robot-3: #ef83ae;
 	--robot-4: #e5ad5a;
 	--robot-5: #b99aef;
+	--area-1: #347c68;
+	--area-2: #426a9e;
+	--area-3: #9d506e;
+	--area-4: #91672e;
+	--area-5: #735a9d;
 }
 
 @theme inline {

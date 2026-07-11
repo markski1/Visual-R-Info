@@ -104,6 +104,7 @@
 		context.strokeStyle = color('--muted-foreground');
 		context.lineWidth = 2;
 		context.strokeRect(cityLeft, cityTop, cityRight - cityLeft, cityBottom - cityTop);
+		drawAreas(currentSnapshot);
 
 		if (currentSelection !== undefined) {
 			context.fillStyle = color('--accent');
@@ -121,6 +122,25 @@
 		for (const [coordinate, contents] of currentSnapshot?.corners ?? [])
 			drawObjects(coordinate, contents);
 		for (const robot of currentSnapshot?.robots ?? []) drawRobot(robot, currentSnapshot);
+	}
+
+	function drawAreas(currentSnapshot: RuntimeSnapshot | undefined): void {
+		if (context === null) return;
+		context.save();
+		context.lineWidth = 3;
+		context.font = '600 11px "JetBrains Mono", monospace';
+		for (const [index, area] of (currentSnapshot?.areas ?? []).entries()) {
+			const left = screenX(area.minAvenue);
+			const right = screenX(area.maxAvenue);
+			const top = screenY(area.maxStreet);
+			const bottom = screenY(area.minStreet);
+			const areaColor = color(`--area-${(index % 5) + 1}`);
+			context.strokeStyle = areaColor;
+			context.strokeRect(left, top, right - left, bottom - top);
+			context.fillStyle = areaColor;
+			context.fillText(area.name, left + 5, top + 14);
+		}
+		context.restore();
 	}
 
 	function drawTrail(
@@ -149,20 +169,25 @@
 		if (context === null) return;
 		const x = screenX(coordinate.avenue);
 		const y = screenY(coordinate.street);
+		const both = contents.flowers > 0 && contents.papers > 0;
+		const fontSize = Math.max(13, Math.min(19, scale));
+		context.font = `${fontSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+		context.textAlign = 'center';
+		context.textBaseline = 'middle';
 		if (contents.flowers > 0) {
-			context.fillStyle = color('--chart-1');
-			context.beginPath();
-			context.arc(x - 7, y - 7, 4, 0, Math.PI * 2);
-			context.fill();
+			context.fillText('🌸', x + (both ? -fontSize * 0.35 : 0), y);
 		}
 		if (contents.papers > 0) {
-			context.fillStyle = color('--chart-2');
-			context.fillRect(x + 3, y - 11, 8, 8);
+			context.fillText('📄', x + (both ? fontSize * 0.35 : 0), y);
 		}
 		context.fillStyle = color('--foreground');
-		context.font = '10px Inter, sans-serif';
-		if (contents.flowers > 1) context.fillText(String(contents.flowers), x - 14, y - 10);
-		if (contents.papers > 1) context.fillText(String(contents.papers), x + 12, y - 5);
+		context.font = '600 9px Inter, sans-serif';
+		context.textAlign = 'left';
+		context.textBaseline = 'alphabetic';
+		if (contents.flowers > 1)
+			context.fillText(String(contents.flowers), x - fontSize, y - fontSize * 0.55);
+		if (contents.papers > 1)
+			context.fillText(String(contents.papers), x + fontSize * 0.45, y - fontSize * 0.55);
 	}
 
 	function drawRobot(

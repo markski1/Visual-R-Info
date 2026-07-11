@@ -16,6 +16,7 @@ import {
 	type Coordinate,
 	type ObjectKind,
 	type Orientation,
+	type RuntimeArea,
 	type Scenario,
 	type RuntimeResult
 } from '../model/index.js';
@@ -44,6 +45,7 @@ export interface RuntimeSnapshot {
 	readonly status: ExecutionState['status'];
 	readonly stepCount: number;
 	readonly corners: ReturnType<ExecutionState['city']['entries']>;
+	readonly areas: readonly RuntimeArea[];
 	readonly robots: readonly {
 		readonly id: string;
 		readonly state: RobotExecutionContext['state'];
@@ -163,6 +165,7 @@ export class RInfoRuntime {
 			corners: this.state.city
 				.entries()
 				.map(([coordinate, contents]) => [{ ...coordinate }, { ...contents }] as const),
+			areas: [...this.state.areas.values()].map((area) => ({ ...area })),
 			robots: [...this.state.robots].map(([id, robot]) => ({
 				id,
 				state: {

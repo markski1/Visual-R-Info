@@ -8,7 +8,14 @@
 	import { bracketMatching } from '@codemirror/language';
 	import { setDiagnostics, type Diagnostic as CmDiagnostic } from '@codemirror/lint';
 	import { StateEffect, StateField } from '@codemirror/state';
-	import { Decoration, EditorView, keymap, lineNumbers, ViewPlugin } from '@codemirror/view';
+	import {
+		Decoration,
+		EditorView,
+		keymap,
+		lineNumbers,
+		ViewPlugin,
+		WidgetType
+	} from '@codemirror/view';
 	import { onMount } from 'svelte';
 
 	import type { Diagnostic } from '$lib/language/diagnostics/index.js';
@@ -19,11 +26,17 @@
 		value,
 		diagnostics = [],
 		activeSpan,
+		colorMarkers = [],
 		onchange
 	}: {
 		value: string;
 		diagnostics?: readonly Diagnostic[];
 		activeSpan?: SourceSpan;
+		colorMarkers?: readonly {
+			offset: number;
+			kind: 'robot' | 'area';
+			colorIndex: number;
+		}[];
 		onchange: (value: string) => void;
 	} = $props();
 
@@ -32,6 +45,7 @@
 	let applyingExternalChange = false;
 
 	const setActiveSpan = StateEffect.define<SourceSpan | undefined>();
+	const setColorMarkers = StateEffect.define<typeof colorMarkers>();
 	const activeLine = StateField.define<ReturnType<typeof Decoration.set>>({
 		create: () => Decoration.none,
 		update(current, transaction) {
@@ -49,6 +63,43 @@
 		},
 		provide: (field) => EditorView.decorations.from(field)
 	});
+	const colorMarkerField = StateField.define<ReturnType<typeof Decoration.set>>({
+		create: () => Decoration.none,
+		update(current, transaction) {
+			current = current.map(transaction.changes);
+			for (const effect of transaction.effects) {
+				if (!effect.is(setColorMarkers)) continue;
+				return Decoration.set(
+					effect.value.map((marker) =>
+						Decoration.widget({
+							widget: new ColorMarkerWidget(marker.kind, marker.colorIndex),
+							side: 1
+						}).range(Math.min(marker.offset, transaction.state.doc.length))
+					)
+				);
+			}
+			return current;
+		},
+		provide: (field) => EditorView.decorations.from(field)
+	});
+
+	class ColorMarkerWidget extends WidgetType {
+		private readonly kind: 'robot' | 'area';
+		private readonly colorIndex: number;
+
+		public constructor(kind: 'robot' | 'area', colorIndex: number) {
+			super();
+			this.kind = kind;
+			this.colorIndex = colorIndex;
+		}
+
+		public toDOM(): HTMLElement {
+			const marker = document.createElement('span');
+			marker.className = `cm-rinfo-color cm-rinfo-${this.kind}-${(this.colorIndex % 5) + 1}`;
+			marker.title = this.kind === 'robot' ? 'Color del robot' : 'Color del área';
+			return marker;
+		}
+	}
 
 	const syntaxColors = ViewPlugin.fromClass(
 		class {
@@ -153,6 +204,14 @@
 		TokenKind.Comma,
 		TokenKind.Semicolon
 	]);
+	const colorMarkerTheme = Object.fromEntries(
+		(['robot', 'area'] as const).flatMap((kind) =>
+			Array.from({ length: 5 }, (_, index) => [
+				`.cm-rinfo-${kind}-${index + 1}`,
+				{ backgroundColor: `var(--${kind}-${index + 1})` }
+			])
+		)
+	);
 
 	onMount(() => {
 		view = new EditorView({
@@ -164,6 +223,7 @@
 				bracketMatching(),
 				syntaxColors,
 				activeLine,
+				colorMarkerField,
 				keymap.of([
 					{ key: 'Tab', run: acceptCompletion },
 					...defaultKeymap,
@@ -200,6 +260,15 @@
 						border: 'none'
 					},
 					'.cm-rinfo-current-line': { backgroundColor: 'var(--syntax-active-line)' },
+					'.cm-rinfo-color': {
+						display: 'inline-block',
+						width: '0.7rem',
+						height: '0.7rem',
+						marginLeft: '0.4rem',
+						border: '1px solid var(--syntax-foreground)',
+						verticalAlign: '-0.05rem'
+					},
+					...colorMarkerTheme,
 					'.tok-keyword': { color: 'var(--syntax-keyword)', fontWeight: '600' },
 					'.tok-command': { color: 'var(--syntax-command)' },
 					'.tok-number': { color: 'var(--syntax-number)' },
@@ -221,7 +290,7 @@
 	});
 
 	$effect(() => {
-		refreshDecorations(diagnostics, activeSpan);
+		refreshDecorations(diagnostics, activeSpan, colorMarkers);
 	});
 
 	export function reveal(span: SourceSpan): void {
@@ -234,7 +303,8 @@
 
 	function refreshDecorations(
 		currentDiagnostics: readonly Diagnostic[] = diagnostics,
-		currentSpan: SourceSpan | undefined = activeSpan
+		currentSpan: SourceSpan | undefined = activeSpan,
+		currentColorMarkers: typeof colorMarkers = colorMarkers
 	): void {
 		if (view === undefined) return;
 		const docLength = view.state.doc.length;
@@ -246,7 +316,9 @@
 				severity: diagnostic.severity === 'info' ? 'info' : diagnostic.severity,
 				message: diagnostic.message
 			}));
-		view.dispatch(setDiagnostics(view.state, lint), { effects: setActiveSpan.of(currentSpan) });
+		view.dispatch(setDiagnostics(view.state, lint), {
+			effects: [setActiveSpan.of(currentSpan), setColorMarkers.of(currentColorMarkers)]
+		});
 	}
 
 	function completeRInfo(context: CompletionContext) {
