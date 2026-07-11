@@ -1,4 +1,4 @@
-import type { Expression, ProcessDeclaration, Statement } from '../../language/ast/index.js';
+import type { RepeatStatement, Statement, WhileStatement } from '../../language/ast/index.js';
 import type { Environment } from './environment.js';
 
 interface BaseFrame<Kind extends string> {
@@ -13,17 +13,12 @@ export interface BlockFrame extends BaseFrame<'block'> {
 }
 
 export interface WhileFrame extends BaseFrame<'while'> {
-	readonly condition: Expression;
-	readonly body: readonly Statement[];
+	readonly statement: WhileStatement;
 }
 
 export interface RepeatFrame extends BaseFrame<'repeat'> {
-	readonly body: readonly Statement[];
+	readonly statement: RepeatStatement;
 	remaining: number;
 }
 
-export interface ProcessFrame extends BaseFrame<'process'> {
-	readonly declaration: ProcessDeclaration;
-}
-
-export type ExecutionFrame = BlockFrame | WhileFrame | RepeatFrame | ProcessFrame;
+export type ExecutionFrame = BlockFrame | WhileFrame | RepeatFrame;

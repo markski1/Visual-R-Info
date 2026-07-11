@@ -64,7 +64,6 @@ fin`;
 		const state = createExecutionState(analysis.program, scenario.value);
 		expect(state.ok).toBe(true);
 		if (!state.ok) return;
-		expect(state.value.mainFrames).toHaveLength(1);
 		const robotContext = state.value.robots.get('R');
 		expect(robotContext).toBeDefined();
 		if (robotContext === undefined) throw new Error('No se creó el contexto del robot.');

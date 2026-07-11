@@ -16,10 +16,9 @@ export interface RobotExecutionContext {
 export interface ExecutionState {
 	status: ExecutionStatus;
 	stepCount: number;
+	randomSeed: number;
 	readonly city: Scenario['city'];
 	readonly areas: Scenario['areas'];
-	readonly mainEnvironment: Environment;
-	readonly mainFrames: ExecutionFrame[];
 	readonly robots: Map<string, RobotExecutionContext>;
 	readonly output: RuntimeValue[];
 }
@@ -53,10 +52,9 @@ export function createExecutionState(
 	return success({
 		status: 'ready',
 		stepCount: 0,
+		randomSeed: scenario.randomSeed,
 		city: scenario.city.clone(),
 		areas: new Map(scenario.areas),
-		mainEnvironment,
-		mainFrames: [blockFrame(program.ast.body, mainEnvironment)],
 		robots,
 		output: []
 	});
