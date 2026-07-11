@@ -693,11 +693,6 @@ fin`;
 						Esquina seleccionada: {selectedCoordinate.avenue}, {selectedCoordinate.street}. Usá *
 						para completar una avenida o calle entera.
 					</p>
-					{#if !scenarioEditable}
-						<p class="text-destructive mt-1 text-[11px]">
-							Reiniciá la ejecución para volver a editar el escenario.
-						</p>
-					{/if}
 				</div>
 				<div class="grid grid-cols-2 gap-2">
 					<label class="space-y-1 text-[11px]">
