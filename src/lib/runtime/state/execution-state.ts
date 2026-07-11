@@ -21,6 +21,15 @@ export interface ExecutionState {
 	readonly areas: Scenario['areas'];
 	readonly robots: Map<string, RobotExecutionContext>;
 	readonly output: RuntimeValue[];
+	/** Estado compartido de CMRE (Concurrent Multi Robot Environment). */
+	readonly locks: Map<string, string>;
+	readonly messages: RuntimeMessage[];
+}
+
+export interface RuntimeMessage {
+	readonly sender: string;
+	readonly recipient: string;
+	readonly value: RuntimeValue;
 }
 
 export function createExecutionState(
@@ -56,7 +65,9 @@ export function createExecutionState(
 		city: scenario.city.clone(),
 		areas: new Map(scenario.areas),
 		robots,
-		output: []
+		output: [],
+		locks: new Map(),
+		messages: []
 	});
 }
 

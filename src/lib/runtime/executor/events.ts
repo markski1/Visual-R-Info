@@ -32,8 +32,24 @@ export interface OutputEvent extends RuntimeEventBase<'output'> {
 	readonly values: readonly RuntimeValue[];
 }
 
-export interface RuntimeErrorEvent extends RuntimeEventBase<'runtime-error'> {
+export interface RuntimeErrorEvent {
+	readonly kind: 'runtime-error';
+	readonly robotId?: string;
+	readonly span?: SourceSpan;
 	readonly error: RuntimeError;
+}
+
+export interface RobotBlockedEvent extends RuntimeEventBase<'robot-blocked'> {
+	readonly reason: 'message' | 'lock';
+}
+
+export interface MessageEvent extends RuntimeEventBase<'message-sent' | 'message-received'> {
+	readonly peerId: string;
+	readonly value: RuntimeValue;
+}
+
+export interface LockEvent extends RuntimeEventBase<'corner-locked' | 'corner-unlocked'> {
+	readonly coordinate: Coordinate;
 }
 
 export interface ProgramFinishedEvent {
@@ -47,4 +63,7 @@ export type RuntimeEvent =
 	| ObjectChangedEvent
 	| OutputEvent
 	| RuntimeErrorEvent
+	| RobotBlockedEvent
+	| MessageEvent
+	| LockEvent
 	| ProgramFinishedEvent;

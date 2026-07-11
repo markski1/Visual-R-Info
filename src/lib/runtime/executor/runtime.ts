@@ -16,6 +16,7 @@ import {
 	type Coordinate,
 	type ObjectKind,
 	type Orientation,
+	type Scenario,
 	type RuntimeResult
 } from '../model/index.js';
 import {
@@ -39,6 +40,20 @@ export interface RunResult {
 	readonly steps: number;
 }
 
+export interface RuntimeSnapshot {
+	readonly status: ExecutionState['status'];
+	readonly stepCount: number;
+	readonly corners: ReturnType<ExecutionState['city']['entries']>;
+	readonly robots: readonly {
+		readonly id: string;
+		readonly state: RobotExecutionContext['state'];
+		readonly variables: Readonly<Record<string, RuntimeValue>>;
+	}[];
+	readonly output: readonly RuntimeValue[];
+	readonly locks: readonly (readonly [string, string])[];
+	readonly pendingMessages: number;
+}
+
 export function createRuntime(
 	program: ValidatedProgram,
 	settings: ScenarioSettings = {}
@@ -47,7 +62,7 @@ export function createRuntime(
 	if (!scenario.ok) return scenario;
 	const state = createExecutionState(program, scenario.value);
 	if (!state.ok) return state;
-	return success(new RInfoRuntime(program, state.value));
+	return success(new RInfoRuntime(program, scenario.value, state.value));
 }
 
 export class RInfoRuntime {
@@ -55,8 +70,9 @@ export class RInfoRuntime {
 	private nextRobot = 0;
 
 	public constructor(
-		program: ValidatedProgram,
-		public readonly state: ExecutionState
+		private readonly program: ValidatedProgram,
+		private readonly scenario: Scenario,
+		public state: ExecutionState
 	) {
 		this.processes = new Map(program.ast.processes.map((process) => [process.name.name, process]));
 	}
@@ -72,7 +88,9 @@ export class RInfoRuntime {
 				return [{ kind: 'program-finished' }];
 			}
 			const [robotId, robot] = selected;
-			if (robot.state.status === 'ready') robot.state = { ...robot.state, status: 'running' };
+			if (robot.state.status === 'ready' || robot.state.status === 'blocked') {
+				robot.state = { ...robot.state, status: 'running' };
+			}
 			const instruction = this.nextInstruction(robot);
 			if (instruction === undefined) {
 				robot.state = { ...robot.state, status: 'finished' };
@@ -82,9 +100,27 @@ export class RInfoRuntime {
 				robotId,
 				robot,
 				instruction.statement,
-				instruction.environment
+				instruction.environment,
+				instruction.sourceFrame
 			);
 			this.state.stepCount += 1;
+			const unfinished = [...this.state.robots.values()].filter(
+				(candidate) => candidate.frames.length > 0
+			);
+			if (
+				unfinished.length > 0 &&
+				unfinished.every((candidate) => candidate.state.status === 'blocked')
+			) {
+				this.state.status = 'failed';
+				events.push({
+					kind: 'runtime-error',
+					error: {
+						code: 'RUN024',
+						message:
+							'Todos los robots quedaron esperando. Revisá los mensajes y bloqueos del programa.'
+					}
+				});
+			}
 			return events;
 		}
 	}
@@ -95,6 +131,13 @@ export class RInfoRuntime {
 		while (this.state.status !== 'finished' && this.state.status !== 'failed') {
 			if (this.state.stepCount >= maxSteps) {
 				this.state.status = 'failed';
+				events.push({
+					kind: 'runtime-error',
+					error: {
+						code: 'RUN020',
+						message: `La ejecución superó el límite de ${maxSteps} pasos. Revisá si hay un ciclo que no termina.`
+					}
+				});
 				break;
 			}
 			events.push(...this.step());
@@ -106,6 +149,36 @@ export class RInfoRuntime {
 		if (this.state.status === 'running') this.state.status = 'paused';
 	}
 
+	public reset(): void {
+		const reset = createExecutionState(this.program, this.scenario);
+		if (!reset.ok) return;
+		this.state = reset.value;
+		this.nextRobot = 0;
+	}
+
+	public getSnapshot(): RuntimeSnapshot {
+		return {
+			status: this.state.status,
+			stepCount: this.state.stepCount,
+			corners: this.state.city
+				.entries()
+				.map(([coordinate, contents]) => [{ ...coordinate }, { ...contents }] as const),
+			robots: [...this.state.robots].map(([id, robot]) => ({
+				id,
+				state: {
+					...robot.state,
+					position: { ...robot.state.position },
+					bag: { ...robot.state.bag },
+					assignedAreas: [...robot.state.assignedAreas]
+				},
+				variables: robot.environment.snapshot()
+			})),
+			output: [...this.state.output],
+			locks: [...this.state.locks],
+			pendingMessages: this.state.messages.length
+		};
+	}
+
 	private selectRobot(): readonly [string, RobotExecutionContext] | undefined {
 		const active = [...this.state.robots].filter(([, robot]) => robot.frames.length > 0);
 		if (active.length === 0) return undefined;
@@ -114,14 +187,19 @@ export class RInfoRuntime {
 		return selected;
 	}
 
-	private nextInstruction(
-		robot: RobotExecutionContext
-	): { readonly statement: Statement; readonly environment: Environment } | undefined {
+	private nextInstruction(robot: RobotExecutionContext):
+		| {
+				readonly statement: Statement;
+				readonly environment: Environment;
+				readonly sourceFrame?: BlockFrame;
+		  }
+		| undefined {
 		while (robot.frames.length > 0) {
 			const frame = robot.frames.at(-1) as ExecutionFrame;
 			if (frame.kind === 'block') {
 				const statement = frame.statements[frame.nextStatement++];
-				if (statement !== undefined) return { statement, environment: frame.environment };
+				if (statement !== undefined)
+					return { statement, environment: frame.environment, sourceFrame: frame };
 				robot.frames.pop();
 				continue;
 			}
@@ -141,7 +219,8 @@ export class RInfoRuntime {
 		robotId: string,
 		robot: RobotExecutionContext,
 		statement: Statement,
-		environment: Environment
+		environment: Environment,
+		sourceFrame?: BlockFrame
 	): RuntimeEvent[] {
 		const events: RuntimeEvent[] = [
 			{
@@ -152,7 +231,14 @@ export class RInfoRuntime {
 				statementKind: statement.kind
 			}
 		];
-		const result = this.executeStatement(robotId, robot, statement, environment, events);
+		const result = this.executeStatement(
+			robotId,
+			robot,
+			statement,
+			environment,
+			events,
+			sourceFrame
+		);
 		if (!result.ok) {
 			this.state.status = 'failed';
 			robot.state = { ...robot.state, status: 'failed' };
@@ -171,7 +257,8 @@ export class RInfoRuntime {
 		robot: RobotExecutionContext,
 		statement: Statement,
 		environment: Environment,
-		events: RuntimeEvent[]
+		events: RuntimeEvent[],
+		sourceFrame?: BlockFrame
 	): RuntimeResult<undefined> {
 		const context = { environment, city: this.state.city, robot: robot.state };
 		switch (statement.kind) {
@@ -191,7 +278,7 @@ export class RInfoRuntime {
 			case 'RobotCommandStatement':
 				return this.executeRobotCommand(robotId, robot, statement.command, statement, events);
 			case 'CallStatement':
-				return this.executeCall(robotId, robot, statement, environment, events);
+				return this.executeCall(robotId, robot, statement, environment, events, sourceFrame);
 			case 'IfStatement': {
 				const condition = evaluateExpression(statement.condition, context);
 				if (!condition.ok) return condition;
@@ -312,7 +399,8 @@ export class RInfoRuntime {
 		robot: RobotExecutionContext,
 		call: CallStatement,
 		environment: Environment,
-		events: RuntimeEvent[]
+		events: RuntimeEvent[],
+		sourceFrame?: BlockFrame
 	): RuntimeResult<undefined> {
 		const context = { environment, city: this.state.city, robot: robot.state };
 		if (call.callee.name === 'Informar') {
@@ -360,6 +448,93 @@ export class RInfoRuntime {
 			cell.value = this.randomInteger(bounds.value[0], bounds.value[1]);
 			return success(undefined);
 		}
+		if (call.callee.name === 'bloquearEsquina' || call.callee.name === 'liberarEsquina') {
+			const coordinates = this.numericArguments(call.arguments, call, environment, robot, 2);
+			if (!coordinates.ok) return coordinates;
+			const coordinate = createCoordinate(coordinates.value[0], coordinates.value[1]);
+			if (!coordinate.ok) return { ok: false, error: { ...coordinate.error, span: call.span } };
+			const key = `${coordinate.value.avenue}:${coordinate.value.street}`;
+			const owner = this.state.locks.get(key);
+			if (call.callee.name === 'bloquearEsquina') {
+				if (owner !== undefined && owner !== robotId) {
+					return this.blockRobot(robotId, robot, call, sourceFrame, events, 'lock');
+				}
+				this.state.locks.set(key, robotId);
+				events.push({
+					kind: 'corner-locked',
+					robotId,
+					span: call.span,
+					coordinate: coordinate.value
+				});
+				return success(undefined);
+			}
+			if (owner !== robotId)
+				return failure(
+					'RUN021',
+					'El robot sólo puede liberar una esquina que haya bloqueado.',
+					call.span
+				);
+			this.state.locks.delete(key);
+			events.push({
+				kind: 'corner-unlocked',
+				robotId,
+				span: call.span,
+				coordinate: coordinate.value
+			});
+			return success(undefined);
+		}
+		if (call.callee.name === 'enviarMensaje') {
+			const recipient = robotName(call.arguments[1]);
+			if (recipient === undefined || !this.state.robots.has(recipient))
+				return failure(
+					'RUN022',
+					'`enviarMensaje` necesita un robot destinatario válido.',
+					call.span
+				);
+			const value = call.arguments[0];
+			if (value === undefined)
+				return failure('RUN019', 'Falta el mensaje que se quiere enviar.', call.span);
+			const evaluated = evaluateExpression(value, context);
+			if (!evaluated.ok) return evaluated;
+			this.state.messages.push({ sender: robotId, recipient, value: evaluated.value });
+			events.push({
+				kind: 'message-sent',
+				robotId,
+				span: call.span,
+				peerId: recipient,
+				value: evaluated.value
+			});
+			return success(undefined);
+		}
+		if (call.callee.name === 'recibirMensaje') {
+			const target = call.arguments[0];
+			const sender = robotName(call.arguments[1]);
+			if (target?.kind !== 'IdentifierExpression' || sender === undefined)
+				return failure(
+					'RUN022',
+					'`recibirMensaje` necesita una variable y un robot emisor.',
+					call.span
+				);
+			const messageIndex = this.state.messages.findIndex(
+				(message) => message.recipient === robotId && message.sender === sender
+			);
+			if (messageIndex < 0) {
+				return this.blockRobot(robotId, robot, call, sourceFrame, events, 'message');
+			}
+			const [message] = this.state.messages.splice(messageIndex, 1);
+			const cell = environment.resolve(target.name);
+			if (cell === undefined)
+				return failure('RUN007', `La variable \`${target.name}\` no está disponible.`, target.span);
+			cell.value = message.value;
+			events.push({
+				kind: 'message-received',
+				robotId,
+				span: call.span,
+				peerId: sender,
+				value: message.value
+			});
+			return success(undefined);
+		}
 
 		const process = this.processes.get(call.callee.name);
 		if (process !== undefined) return this.callProcess(process, call, robot, environment);
@@ -368,6 +543,22 @@ export class RInfoRuntime {
 			`La operación \`${call.callee.name}\` todavía no está disponible en este runtime.`,
 			call.span
 		);
+	}
+
+	private blockRobot(
+		robotId: string,
+		robot: RobotExecutionContext,
+		call: CallStatement,
+		sourceFrame: BlockFrame | undefined,
+		events: RuntimeEvent[],
+		reason: 'message' | 'lock'
+	): RuntimeResult<undefined> {
+		if (sourceFrame === undefined)
+			return failure('RUN023', 'No se pudo suspender esta instrucción de CMRE.', call.span);
+		sourceFrame.nextStatement -= 1;
+		robot.state = { ...robot.state, status: 'blocked' };
+		events.push({ kind: 'robot-blocked', robotId, span: call.span, reason });
+		return success(undefined);
 	}
 
 	private callProcess(
@@ -475,4 +666,8 @@ function nextCoordinate(position: Coordinate, orientation: Orientation): Coordin
 	if (orientation === 'east') return { avenue: position.avenue + 1, street: position.street };
 	if (orientation === 'south') return { avenue: position.avenue, street: position.street - 1 };
 	return { avenue: position.avenue - 1, street: position.street };
+}
+
+function robotName(expression: CallStatement['arguments'][number] | undefined): string | undefined {
+	return expression?.kind === 'IdentifierExpression' ? expression.name : undefined;
 }
