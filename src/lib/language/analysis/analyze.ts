@@ -35,27 +35,21 @@ export function analyze(source: string, options: AnalysisOptions = {}): Analysis
 	const lexical = lex(source);
 	const parsed = parseProgram(lexical.tokens);
 	const syntaxDiagnostics = [...lexical.diagnostics, ...parsed.diagnostics];
-	const hasSyntaxErrors = syntaxDiagnostics.some(({ severity }) => severity === 'error');
-	const semantic = hasSyntaxErrors
-		? { symbols: { symbols: [] }, diagnostics: [] }
-		: analyzeSemantics(parsed.program);
+	const baseResult = { ast: parsed.program, tokens: lexical.tokens };
+	if (syntaxDiagnostics.some(({ severity }) => severity === 'error')) {
+		return { ...baseResult, diagnostics: syntaxDiagnostics.sort(compareDiagnostics) };
+	}
+
+	const semantic = analyzeSemantics(parsed.program);
 	const diagnostics = [...syntaxDiagnostics, ...semantic.diagnostics].sort(compareDiagnostics);
-	const hasErrors = diagnostics.some(({ severity }) => severity === 'error');
+	if (diagnostics.some(({ severity }) => severity === 'error')) {
+		return { ...baseResult, diagnostics };
+	}
 
 	return {
-		ast: parsed.program,
-		tokens: lexical.tokens,
+		...baseResult,
 		diagnostics,
-		...(hasErrors
-			? {}
-			: {
-					program: {
-						profile,
-						source,
-						ast: parsed.program,
-						symbols: semantic.symbols
-					} satisfies ValidatedProgram
-				})
+		program: { profile, source, ast: parsed.program, symbols: semantic.symbols }
 	};
 }
 

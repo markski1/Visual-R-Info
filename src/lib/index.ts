@@ -1,2 +1,2 @@
-// place files you want to import through the `$lib` alias in this folder.
 export * from './language/index.js';
+export * from './runtime/index.js';

@@ -46,6 +46,13 @@ describe('analyze', () => {
 		expect(result.program).toBeDefined();
 		expect(result.program?.profile).toBe(CMRE_PROFILE);
 		expect(result.ast.robots).toHaveLength(2);
+		expect(
+			result.ast.robots.flatMap(({ body }) =>
+				body.flatMap((statement) =>
+					statement.kind === 'CallStatement' ? [statement.callee.name] : []
+				)
+			)
+		).toEqual(['Random', 'bloquearEsquina', 'enviarMensaje', 'liberarEsquina', 'recibirMensaje']);
 	});
 
 	it('detecta duplicados, usos no declarados y errores de tipos en una sola pasada', () => {
