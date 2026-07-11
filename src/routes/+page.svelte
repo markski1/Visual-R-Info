@@ -4,7 +4,6 @@
 		Check,
 		ExternalLink,
 		FolderOpen,
-		Gauge,
 		Monitor,
 		Moon,
 		Pause,
@@ -20,6 +19,7 @@
 	import { onDestroy, onMount } from 'svelte';
 
 	import CodeEditor from '$lib/editor/code-editor.svelte';
+	import { DEFAULT_EXAMPLE, EXAMPLE_PROGRAMS } from '$lib/examples.js';
 	import CityCanvas from '$lib/visualizer/city-canvas.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -37,48 +37,27 @@
 		type ScenarioCorner
 	} from '$lib/runtime/index.js';
 
-	const SAMPLE = `programa recorrido
-areas
-  ciudad: AreaC(1,1,100,100)
-robots
-  robot explorador
-  variables
-    lado: numero
-  comenzar
-    lado:=0
-    repetir 4
-      repetir 4
-        mover
-      derecha
-      lado:=lado+1
-    Informar(lado)
-  fin
-variables
-  Rinfo: explorador
-comenzar
-  AsignarArea(Rinfo,ciudad)
-  Iniciar(Rinfo,10,10)
-fin`;
 	const STORAGE_KEY = 'visual-r-info-workspace-v1';
 	type TrailSegment = { robotId: string; from: Coordinate; to: Coordinate };
 
-	let source = $state(SAMPLE);
-	let analysis: AnalysisResult = $state(analyze(SAMPLE));
+	let source = $state(DEFAULT_EXAMPLE.source);
+	let analysis: AnalysisResult = $state(analyze(DEFAULT_EXAMPLE.source));
 	let runtime: RInfoRuntime | undefined = $state();
 	let snapshot: RuntimeSnapshot | undefined = $state();
-	let activeSpan: SourceSpan | undefined = $state();
+	let activeLines: { robotId: string; span: SourceSpan; colorIndex: number }[] = $state([]);
 	let running = $state(false);
 	let statusMessage = $state('Programa válido. Listo para ejecutar.');
 	let runtimeError = $state('');
 	let editor: { reveal(span: SourceSpan): void };
 	let analysisTimer: ReturnType<typeof setTimeout> | undefined;
 	let executionTimer: ReturnType<typeof setTimeout> | undefined;
-	let analyzedSource = SAMPLE;
+	let analyzedSource = DEFAULT_EXAMPLE.source;
 	let workspace: HTMLElement;
 	let fileInput: HTMLInputElement;
 	let settingsDialog: HTMLDialogElement;
 	let welcomeDialog: HTMLDialogElement;
-	let executionDelay = $state(140);
+	let executionSpeed = $state(340);
+	const executionDelay = $derived(540 - executionSpeed);
 	let scenarioCorners: ScenarioCorner[] = $state([]);
 	let trail: TrailSegment[] = $state([]);
 	let selectedCoordinate = $state<Coordinate>({ avenue: 1, street: 1 });
@@ -88,6 +67,7 @@ fin`;
 	let objectQuantity = $state(1);
 	let storageReady = $state(false);
 	let shortcutModifier = $state('Alt');
+	let selectedExampleId = $state(DEFAULT_EXAMPLE.id);
 	let storageTimer: ReturnType<typeof setTimeout> | undefined;
 	type Theme = 'light' | 'dark' | 'system';
 	let theme: Theme = $state('system');
@@ -125,6 +105,9 @@ fin`;
 			(snapshot.stepCount > 0 || snapshot.status === 'finished' || snapshot.status === 'failed')
 	);
 	const scenarioEditable = $derived(snapshot === undefined || snapshot.stepCount === 0);
+	const selectedExample = $derived(
+		EXAMPLE_PROGRAMS.find(({ id }) => id === selectedExampleId) ?? DEFAULT_EXAMPLE
+	);
 	const editorColorMarkers = $derived.by(() => {
 		const program = analysis.program;
 		if (program === undefined) return [];
@@ -190,7 +173,7 @@ fin`;
 			runtime = undefined;
 			snapshot = undefined;
 			trail = [];
-			activeSpan = undefined;
+			activeLines = [];
 			runtimeError = '';
 			statusMessage = analysis.program
 				? 'Programa válido. Listo para ejecutar.'
@@ -249,6 +232,7 @@ fin`;
 			return;
 		handleEvents(prepared.step());
 		snapshot = prepared.getSnapshot();
+		pruneFinishedRobotLines(snapshot);
 	}
 
 	function run(): void {
@@ -266,6 +250,7 @@ fin`;
 			if (!running || runtime === undefined) return;
 			handleEvents(runtime.step());
 			snapshot = runtime.getSnapshot();
+			pruneFinishedRobotLines(snapshot);
 			if (runtime.state.status === 'finished' || runtime.state.status === 'failed') {
 				running = false;
 				return;
@@ -297,12 +282,18 @@ fin`;
 	function handleEvents(events: readonly RuntimeEvent[]): void {
 		for (const event of events) {
 			if (event.kind === 'instruction-started') {
-				activeSpan = event.span;
-				editor.reveal(event.span);
+				activeLines = [
+					...activeLines.filter(({ robotId }) => robotId !== event.robotId),
+					{ robotId: event.robotId, span: event.span, colorIndex: robotColorIndex(event.robotId) }
+				];
 				statusMessage = `Ejecutando línea ${event.span.start.line}.`;
 			} else if (event.kind === 'robot-moved') {
-				trail = [...trail, { robotId: event.robotId, from: event.from, to: event.to }];
-				statusMessage = `El robot avanzó hasta (${event.to.avenue}, ${event.to.street}).`;
+				if (event.movement === 'walk') {
+					trail = [...trail, { robotId: event.robotId, from: event.from, to: event.to }];
+					statusMessage = `El robot avanzó hasta (${event.to.avenue}, ${event.to.street}).`;
+				} else {
+					statusMessage = `El robot se posicionó en (${event.to.avenue}, ${event.to.street}).`;
+				}
 			} else if (event.kind === 'robot-turned') {
 				statusMessage = 'El robot giró a la derecha.';
 			} else if (event.kind === 'output') {
@@ -318,6 +309,20 @@ fin`;
 
 	function revealDiagnostic(diagnostic: Diagnostic): void {
 		if (diagnostic.span !== undefined) editor.reveal(diagnostic.span);
+	}
+
+	function robotColorIndex(robotId: string): number {
+		if (runtime === undefined) return 0;
+		return Math.max(0, [...runtime.state.robots.keys()].indexOf(robotId));
+	}
+
+	function pruneFinishedRobotLines(currentSnapshot: RuntimeSnapshot): void {
+		activeLines = activeLines.filter(({ robotId }) => {
+			const robot = currentSnapshot.robots.find(({ id }) => id === robotId);
+			return (
+				robot !== undefined && robot.state.status !== 'finished' && robot.state.status !== 'failed'
+			);
+		});
 	}
 
 	function startResize(axis: 'editor' | 'city' | 'diagnostics', event: PointerEvent): void {
@@ -464,16 +469,17 @@ fin`;
 		stopExecution();
 		runtime = undefined;
 		snapshot = undefined;
-		activeSpan = undefined;
+		activeLines = [];
 		trail = [];
 	}
 
 	function loadExample(): void {
-		source = SAMPLE;
+		const example = EXAMPLE_PROGRAMS.find(({ id }) => id === selectedExampleId) ?? DEFAULT_EXAMPLE;
+		source = example.source;
 		scenarioCorners = [];
 		rebuildRuntime();
 		settingsDialog.close();
-		statusMessage = 'Programa de ejemplo cargado.';
+		statusMessage = `Ejemplo “${example.name}” cargado.`;
 	}
 
 	function handleShortcut(event: KeyboardEvent): void {
@@ -579,10 +585,22 @@ fin`;
 				bind:this={fileInput}
 				onchange={(event) => void loadFile(event.currentTarget.files?.[0])}
 			/>
-			<Button variant="ghost" size="sm" onclick={() => fileInput.click()}
-				><FolderOpen /> Abrir</Button
-			>
-			<Button variant="ghost" size="sm" onclick={saveFile}><Save /> Guardar</Button>
+			<div class="flex min-w-0 items-center gap-2 px-1">
+				<label for="execution-speed" class="text-muted-foreground text-xs whitespace-nowrap"
+					>Velocidad</label
+				>
+				<input
+					id="execution-speed"
+					type="range"
+					min="40"
+					max="500"
+					step="10"
+					bind:value={executionSpeed}
+					aria-label="Intervalo entre pasos de ejecución"
+					aria-valuetext={`${executionDelay} milisegundos entre pasos`}
+					class="execution-speed accent-primary w-24 sm:w-32"
+				/>
+			</div>
 			{#if executionStarted}
 				<Button variant="outline" size="sm" onclick={reset}><RotateCcw /> Reset</Button>
 			{:else}
@@ -610,20 +628,21 @@ fin`;
 		bind:this={workspace}
 	>
 		<section class="panel-editor bg-background min-h-[480px] min-w-0 overflow-hidden lg:min-h-0">
-			<div
-				class="border-border flex h-9 items-center justify-between border-b px-3 text-xs font-semibold"
-			>
+			<div class="border-border flex h-9 items-center justify-between gap-3 border-b px-3 text-xs">
 				<span>programa.ri</span>
-				<span class={errors.length ? 'text-destructive' : 'text-muted-foreground'}
-					>{errors.length ? `${errors.length} errores` : 'Sin errores'}</span
-				>
+				<div class="flex items-center gap-1">
+					<Button variant="ghost" size="xs" onclick={() => fileInput.click()}
+						><FolderOpen /> Abrir</Button
+					>
+					<Button variant="ghost" size="xs" onclick={saveFile}><Save /> Guardar</Button>
+				</div>
 			</div>
 			<div class="h-[calc(100%-2.25rem)]">
 				<CodeEditor
 					bind:this={editor}
 					value={source}
 					diagnostics={analysis.diagnostics}
-					{activeSpan}
+					{activeLines}
 					colorMarkers={editorColorMarkers}
 					onchange={(next) => (source = next)}
 				/>
@@ -663,7 +682,7 @@ fin`;
 			{/if}
 			{#if analysis.diagnostics.length}
 				<ul class="space-y-1">
-					{#each analysis.diagnostics as diagnostic (`${diagnostic.code}:${diagnostic.span?.start.offset ?? -1}`)}
+					{#each analysis.diagnostics as diagnostic, index (`${diagnostic.code}:${diagnostic.span?.start.offset ?? -1}:${index}`)}
 						<li>
 							<button
 								class="hover:bg-muted w-full rounded px-2 py-1.5 text-left text-xs"
@@ -819,7 +838,7 @@ fin`;
 
 	<dialog
 		bind:this={settingsDialog}
-		class="bg-popover text-popover-foreground border-border m-auto w-[min(34rem,calc(100%-2rem))] rounded-lg border p-0 shadow-2xl backdrop:bg-black/50"
+		class="bg-popover text-popover-foreground border-border m-auto max-h-[calc(100dvh-2rem)] w-[min(34rem,calc(100%-2rem))] overflow-y-auto rounded-lg border p-0 shadow-2xl backdrop:bg-black/50"
 		onclick={closeSettingsFromBackdrop}
 		onclose={() => settingsDialog.blur()}
 	>
@@ -857,39 +876,24 @@ fin`;
 				</div>
 			</section>
 			<section class="bg-muted/50 border-border space-y-3 rounded-md border p-4">
-				<div class="flex items-center justify-between gap-4">
-					<div class="flex items-center gap-2">
-						<Gauge size={16} />
-						<label for="execution-speed" class="text-sm font-semibold">Velocidad de ejecución</label
-						>
-					</div>
-					<output for="execution-speed" class="text-muted-foreground shrink-0 font-mono text-xs"
-						>{executionDelay} ms</output
-					>
-				</div>
-				<input
-					id="execution-speed"
-					type="range"
-					min="40"
-					max="500"
-					step="10"
-					bind:value={executionDelay}
-					class="execution-speed accent-primary w-full"
-				/>
-				<p class="text-muted-foreground text-xs">
-					Un intervalo menor hace que la ejecución automática avance más rápido.
-				</p>
-			</section>
-			<section
-				class="bg-muted/50 border-border flex items-center justify-between gap-4 rounded-md border p-4"
-			>
 				<div>
-					<h3 class="text-sm font-semibold">Programa de ejemplo</h3>
+					<h3 class="text-sm font-semibold">Programas de ejemplo</h3>
 					<p class="text-muted-foreground mt-1 text-xs">
-						Restaura el código y la ciudad iniciales.
+						Reemplazan el código y limpian la ciudad actual.
 					</p>
 				</div>
-				<Button variant="outline" size="sm" onclick={loadExample}>Cargar ejemplo</Button>
+				<select
+					bind:value={selectedExampleId}
+					class="border-input bg-background h-9 w-full border px-2 text-xs"
+				>
+					{#each EXAMPLE_PROGRAMS as example (example.id)}
+						<option value={example.id}>{example.name}</option>
+					{/each}
+				</select>
+				<p class="text-muted-foreground text-xs leading-relaxed">{selectedExample.description}</p>
+				<Button variant="outline" size="sm" class="w-full" onclick={loadExample}
+					>Cargar ejemplo</Button
+				>
 			</section>
 			<section class="bg-primary text-primary-foreground space-y-3 rounded-md p-4">
 				<div>
@@ -943,9 +947,7 @@ fin`;
 			<div class="space-y-2">
 				<h2 class="font-heading text-lg font-bold">Bienvenido a Visual R-Info</h2>
 				<p class="text-muted-foreground text-sm leading-relaxed">
-					Un entorno web para escribir y ejecutar programas R-Info, observar la ciudad y seguir el
-					recorrido de los robots paso a paso. Tu trabajo se guarda automáticamente en este
-					navegador.
+					Un entorno web para aprender con R-Info.
 				</p>
 			</div>
 			<section class="bg-muted/50 border-border rounded-md border p-4">

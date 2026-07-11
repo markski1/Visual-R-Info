@@ -364,7 +364,8 @@ export class RInfoRuntime {
 				robotId,
 				span: statement.span,
 				from,
-				to: coordinate.value
+				to: coordinate.value,
+				movement: 'walk'
 			});
 			return success(undefined);
 		}
@@ -430,7 +431,14 @@ export class RInfoRuntime {
 				);
 			const from = robot.state.position;
 			robot.state = { ...robot.state, position: coordinate.value };
-			events.push({ kind: 'robot-moved', robotId, span: call.span, from, to: coordinate.value });
+			events.push({
+				kind: 'robot-moved',
+				robotId,
+				span: call.span,
+				from,
+				to: coordinate.value,
+				movement: 'teleport'
+			});
 			return success(undefined);
 		}
 		if (call.callee.name === 'Random') {

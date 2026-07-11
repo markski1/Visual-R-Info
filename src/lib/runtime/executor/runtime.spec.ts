@@ -107,6 +107,36 @@ describe('ejecutor', () => {
 		expect(created.value.state.stepCount).toBe(2);
 	});
 
+	it('distingue Pos de un movimiento para no dibujar un recorrido de teletransporte', () => {
+		const source = `programa teletransporte
+areas
+  ciudad: AreaC(1,1,100,100)
+robots
+  robot viajero
+  comenzar
+    Pos(20,30)
+  fin
+variables
+  R: viajero
+comenzar
+  AsignarArea(R,ciudad)
+  Iniciar(R,1,1)
+fin`;
+		const analysis = analyze(source);
+		if (analysis.program === undefined) throw new Error('El programa debe ser válido.');
+		const created = createRuntime(analysis.program);
+		if (!created.ok) throw new Error(created.error.message);
+		const result = created.value.run();
+		expect(result.events).toContainEqual(
+			expect.objectContaining({
+				kind: 'robot-moved',
+				movement: 'teleport',
+				from: { avenue: 1, street: 1 },
+				to: { avenue: 20, street: 30 }
+			})
+		);
+	});
+
 	it('detiene la ejecución ante un movimiento fuera de la ciudad', () => {
 		const source = COMPLETE_PROGRAM.replace('Iniciar(R,1,1)', 'Iniciar(R,1,100)');
 		const analysis = analyze(source);

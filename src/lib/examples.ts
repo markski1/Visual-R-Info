@@ -59,12 +59,12 @@ comenzar
   Iniciar(R1,10,10)
   Iniciar(R2,20,10)
 fin`
-  },
-  {
-    id: 'multiples_robots',
-    name: 'Múltiples robots',
-    description: 'Cinco robots dibujan la palabra R-Info al mismo tiempo.',
-    source: `programa comunicacion
+	},
+	{
+		id: 'multiples_robots',
+		name: 'Múltiples robots',
+		description: 'Cinco robots dibujan la palabra R-Info al mismo tiempo.',
+		source: `programa comunicacion
     procesos
       proceso izquierda()
         comenzar
@@ -180,8 +180,8 @@ fin`
       Iniciar(N,23,35)
       Iniciar(FF,30,35)
       Iniciar(O,36,35)
-    fin`,
-  },
+    fin`
+	},
 	{
 		id: 'cmre',
 		name: 'Concurrencia multirrobot',

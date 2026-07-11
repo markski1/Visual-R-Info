@@ -25,13 +25,13 @@
 	let {
 		value,
 		diagnostics = [],
-		activeSpan,
+		activeLines = [],
 		colorMarkers = [],
 		onchange
 	}: {
 		value: string;
 		diagnostics?: readonly Diagnostic[];
-		activeSpan?: SourceSpan;
+		activeLines?: readonly { robotId: string; span: SourceSpan; colorIndex: number }[];
 		colorMarkers?: readonly {
 			offset: number;
 			kind: 'robot' | 'area';
@@ -44,25 +44,48 @@
 	let view: EditorView | undefined;
 	let applyingExternalChange = false;
 
-	const setActiveSpan = StateEffect.define<SourceSpan | undefined>();
+	const setActiveLines = StateEffect.define<typeof activeLines>();
 	const setColorMarkers = StateEffect.define<typeof colorMarkers>();
-	const activeLine = StateField.define<ReturnType<typeof Decoration.set>>({
+	const executionLines = StateField.define<ReturnType<typeof Decoration.set>>({
 		create: () => Decoration.none,
 		update(current, transaction) {
 			current = current.map(transaction.changes);
 			for (const effect of transaction.effects) {
-				if (!effect.is(setActiveSpan)) continue;
-				if (effect.value === undefined) return Decoration.none;
-				const position = Math.min(effect.value.start.offset, transaction.state.doc.length);
-				const line = transaction.state.doc.lineAt(position);
-				return Decoration.set([
-					Decoration.line({ class: 'cm-rinfo-current-line' }).range(line.from)
-				]);
+				if (!effect.is(setActiveLines)) continue;
+				const lines: { from: number; robotIds: string[]; colorIndices: number[] }[] = [];
+				for (const active of effect.value) {
+					const position = Math.min(active.span.start.offset, transaction.state.doc.length);
+					const line = transaction.state.doc.lineAt(position);
+					const existing = lines.find(({ from }) => from === line.from);
+					if (existing === undefined) {
+						lines.push({
+							from: line.from,
+							robotIds: [active.robotId],
+							colorIndices: [active.colorIndex]
+						});
+					} else {
+						existing.robotIds.push(active.robotId);
+						existing.colorIndices.push(active.colorIndex);
+					}
+				}
+				return Decoration.set(
+					lines.map((line) =>
+						Decoration.line({
+							class: 'cm-rinfo-executing-line',
+							attributes: {
+								style: executionLineStyle(line.colorIndices),
+								title: `${line.robotIds.join(', ')} ejecutando esta línea`
+							}
+						}).range(line.from)
+					),
+					true
+				);
 			}
 			return current;
 		},
 		provide: (field) => EditorView.decorations.from(field)
 	});
+
 	const colorMarkerField = StateField.define<ReturnType<typeof Decoration.set>>({
 		create: () => Decoration.none,
 		update(current, transaction) {
@@ -213,6 +236,23 @@
 		)
 	);
 
+	function executionLineStyle(colorIndices: readonly number[]): string {
+		const colors = colorIndices
+			.map((index) => `var(--robot-${(index % 5) + 1})`)
+			.filter((color, index, all) => all.indexOf(color) === index);
+		if (colors.length === 1) {
+			return `background: color-mix(in srgb, ${colors[0]} 22%, var(--syntax-background)); box-shadow: inset 4px 0 0 ${colors[0]};`;
+		}
+		const section = 100 / colors.length;
+		const stops = colors
+			.map(
+				(color, index) =>
+					`color-mix(in srgb, ${color} 22%, var(--syntax-background)) ${index * section}% ${(index + 1) * section}%`
+			)
+			.join(', ');
+		return `background: linear-gradient(90deg, ${stops}); box-shadow: inset 4px 0 0 ${colors[0]};`;
+	}
+
 	onMount(() => {
 		view = new EditorView({
 			parent: host,
@@ -222,7 +262,7 @@
 				history(),
 				bracketMatching(),
 				syntaxColors,
-				activeLine,
+				executionLines,
 				colorMarkerField,
 				keymap.of([
 					{ key: 'Tab', run: acceptCompletion },
@@ -259,7 +299,7 @@
 						color: 'var(--syntax-comment)',
 						border: 'none'
 					},
-					'.cm-rinfo-current-line': { backgroundColor: 'var(--syntax-active-line)' },
+					'.cm-rinfo-executing-line': { transition: 'background 80ms linear' },
 					'.cm-rinfo-color': {
 						display: 'inline-block',
 						width: '0.7rem',
@@ -290,7 +330,7 @@
 	});
 
 	$effect(() => {
-		refreshDecorations(diagnostics, activeSpan, colorMarkers);
+		refreshDecorations(diagnostics, activeLines, colorMarkers);
 	});
 
 	export function reveal(span: SourceSpan): void {
@@ -303,7 +343,7 @@
 
 	function refreshDecorations(
 		currentDiagnostics: readonly Diagnostic[] = diagnostics,
-		currentSpan: SourceSpan | undefined = activeSpan,
+		currentActiveLines: typeof activeLines = activeLines,
 		currentColorMarkers: typeof colorMarkers = colorMarkers
 	): void {
 		if (view === undefined) return;
@@ -316,9 +356,19 @@
 				severity: diagnostic.severity === 'info' ? 'info' : diagnostic.severity,
 				message: diagnostic.message
 			}));
-		view.dispatch(setDiagnostics(view.state, lint), {
-			effects: [setActiveSpan.of(currentSpan), setColorMarkers.of(currentColorMarkers)]
-		});
+		const effects: StateEffect<unknown>[] = [
+			setActiveLines.of(currentActiveLines),
+			setColorMarkers.of(currentColorMarkers)
+		];
+		const latestLine = currentActiveLines.at(-1);
+		if (latestLine !== undefined) {
+			effects.push(
+				EditorView.scrollIntoView(Math.min(latestLine.span.start.offset, view.state.doc.length), {
+					y: 'center'
+				})
+			);
+		}
+		view.dispatch(setDiagnostics(view.state, lint), { effects });
 	}
 
 	function completeRInfo(context: CompletionContext) {

@@ -17,6 +17,7 @@ export interface InstructionStartedEvent extends RuntimeEventBase<'instruction-s
 export interface RobotMovedEvent extends RuntimeEventBase<'robot-moved'> {
 	readonly from: Coordinate;
 	readonly to: Coordinate;
+	readonly movement: 'walk' | 'teleport';
 }
 
 export interface RobotTurnedEvent extends RuntimeEventBase<'robot-turned'> {

@@ -40,7 +40,7 @@
 			canvas.style.width = `${width}px`;
 			canvas.style.height = `${height}px`;
 			context?.setTransform(ratio, 0, 0, ratio, 0, 0);
-			draw();
+			syncAndDraw(snapshot, selected, theme, trail);
 		});
 		resize.observe(container);
 		return () => resize.disconnect();
@@ -58,14 +58,32 @@
 	): void {
 		container.dataset.theme = currentTheme;
 		if (currentSnapshot === undefined) cameraInitialized = false;
-		const robot = currentSnapshot?.robots[0];
-		if (robot !== undefined && !cameraInitialized) {
-			centerAvenue = robot.state.position.avenue;
-			centerStreet = robot.state.position.street;
-			scale = 16;
-			cameraInitialized = true;
+		if (currentSnapshot?.robots.length && !cameraInitialized && width > 0 && height > 0) {
+			initializeCamera(currentSnapshot);
 		}
 		draw(currentSnapshot, currentSelection, currentTrail);
+	}
+
+	function initializeCamera(currentSnapshot: RuntimeSnapshot): void {
+		const positions = currentSnapshot.robots.map(({ state }) => state.position);
+		const avenues = positions.map(({ avenue }) => avenue);
+		const streets = positions.map(({ street }) => street);
+		const minAvenue = Math.min(...avenues);
+		const maxAvenue = Math.max(...avenues);
+		const minStreet = Math.min(...streets);
+		const maxStreet = Math.max(...streets);
+		centerAvenue = (minAvenue + maxAvenue) / 2;
+		centerStreet = (minStreet + maxStreet) / 2;
+		if (positions.length === 1) {
+			scale = 16;
+		} else {
+			const avenueSpan = maxAvenue - minAvenue;
+			const streetSpan = maxStreet - minStreet;
+			const horizontalFit = (width - 64) / (avenueSpan + 6);
+			const verticalFit = (height - 64) / (streetSpan + 6);
+			scale = Math.max(3, Math.min(11, horizontalFit, verticalFit));
+		}
+		cameraInitialized = true;
 	}
 
 	function draw(
