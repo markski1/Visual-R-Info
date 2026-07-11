@@ -7,7 +7,7 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>BetteR-Info</title>
+	<title>Visual R-Info</title>
 	<meta
 		name="description"
 		content="Entorno web educativo para escribir y ejecutar programas R-Info."

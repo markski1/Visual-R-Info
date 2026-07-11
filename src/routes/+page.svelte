@@ -53,6 +53,23 @@ fin`;
 	let analysisTimer: ReturnType<typeof setTimeout> | undefined;
 	let executionTimer: ReturnType<typeof setTimeout> | undefined;
 	let analyzedSource = SAMPLE;
+	let workspace: HTMLElement;
+	let splitY = $state(64);
+	let resizeAxis: 'x' | 'y' | undefined;
+
+	const orientationLabels = {
+		north: 'Norte',
+		east: 'Este',
+		south: 'Sur',
+		west: 'Oeste'
+	} as const;
+	const statusLabels = {
+		ready: 'Listo',
+		running: 'Ejecutando',
+		blocked: 'En espera',
+		finished: 'Finalizado',
+		failed: 'Con error'
+	} as const;
 
 	const errors = $derived(analysis.diagnostics.filter(({ severity }) => severity === 'error'));
 	const selectedRobot = $derived(snapshot?.robots[0]);
@@ -187,16 +204,44 @@ fin`;
 	function revealDiagnostic(diagnostic: Diagnostic): void {
 		if (diagnostic.span !== undefined) editor.reveal(diagnostic.span);
 	}
+
+	function startResize(axis: 'x' | 'y', event: PointerEvent): void {
+		resizeAxis = axis;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+
+	function resize(event: PointerEvent): void {
+		if (resizeAxis === undefined) return;
+		const bounds = workspace.getBoundingClientRect();
+		if (resizeAxis === 'x') {
+			const pixels = Math.min(
+				Math.max(360, bounds.width - 346),
+				Math.max(360, event.clientX - bounds.left)
+			);
+			splitX = (pixels / bounds.width) * 100;
+		} else {
+			const pixels = Math.min(
+				Math.max(300, bounds.height - 186),
+				Math.max(300, event.clientY - bounds.top)
+			);
+			splitY = (pixels / bounds.height) * 100;
+		}
+	}
+
+	function stopResize(event: PointerEvent): void {
+		resizeAxis = undefined;
+		(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+	}
 </script>
 
-<svelte:head><title>BetteR-Info · IDE R-Info</title></svelte:head>
+<svelte:head><title>Visual R-Info</title></svelte:head>
 
 <main class="flex min-h-svh flex-col bg-[#ece8de] text-[#252722]">
 	<header
 		class="flex min-h-14 flex-wrap items-center gap-2 border-b border-black/10 bg-[#f8f6f0] px-3 py-2 shadow-sm sm:px-4"
 	>
 		<div class="mr-auto">
-			<h1 class="text-sm font-bold tracking-tight">WebR-Info</h1>
+			<h1 class="text-sm font-bold tracking-tight">Visual R-Info</h1>
 			<p class="text-[10px] text-black/55">Adaptación web del entorno educativo R-Info</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-1.5">
@@ -215,9 +260,11 @@ fin`;
 	</header>
 
 	<section
-		class="grid min-h-0 flex-1 grid-cols-1 gap-px bg-black/10 lg:grid-cols-[minmax(420px,1.05fr)_minmax(380px,.95fr)] lg:grid-rows-[minmax(440px,1fr)_220px]"
+		class="workspace min-h-0 flex-1 bg-black/10"
+		style={`--split-x: ${splitX}%; --split-y: ${splitY}%;`}
+		bind:this={workspace}
 	>
-		<section class="min-h-[480px] bg-[#fbfaf6] lg:min-h-0">
+		<section class="panel-editor min-h-[480px] bg-[#fbfaf6] lg:min-h-0">
 			<div
 				class="flex h-9 items-center justify-between border-b border-black/10 px-3 text-xs font-semibold"
 			>
@@ -237,7 +284,7 @@ fin`;
 			</div>
 		</section>
 
-		<section class="min-h-[400px] bg-[#f7f4ed] lg:min-h-0">
+		<section class="panel-city min-h-[400px] bg-[#f7f4ed] lg:min-h-0">
 			<div
 				class="flex h-9 items-center justify-between border-b border-black/10 px-3 text-xs font-semibold"
 			>
@@ -246,7 +293,7 @@ fin`;
 			<div class="h-[calc(100%-2.25rem)]"><CityCanvas {snapshot} lastAction={statusMessage} /></div>
 		</section>
 
-		<section class="min-h-[200px] overflow-auto bg-[#f8f6f0] p-3 lg:min-h-0">
+		<section class="panel-diagnostics min-h-[200px] overflow-auto bg-[#f8f6f0] p-3 lg:min-h-0">
 			<div class="mb-2 flex items-center gap-2 text-xs font-semibold">
 				<Terminal size={14} /> Diagnósticos y salida
 			</div>
@@ -279,7 +326,7 @@ fin`;
 			{/if}
 		</section>
 
-		<aside class="min-h-[220px] overflow-auto bg-[#f8f6f0] p-3 lg:min-h-0">
+		<aside class="panel-inspector min-h-[220px] overflow-auto bg-[#f8f6f0] p-3 lg:min-h-0">
 			<div class="mb-3 flex items-center gap-2 text-xs font-semibold">
 				<Bot size={14} /> Inspector
 			</div>
@@ -290,9 +337,9 @@ fin`;
 					<dt class="text-black/50">Posición</dt>
 					<dd>({selectedRobot.state.position.avenue}, {selectedRobot.state.position.street})</dd>
 					<dt class="text-black/50">Orientación</dt>
-					<dd>{selectedRobot.state.orientation}</dd>
+					<dd>{orientationLabels[selectedRobot.state.orientation]}</dd>
 					<dt class="text-black/50">Estado</dt>
-					<dd>{selectedRobot.state.status}</dd>
+					<dd>{statusLabels[selectedRobot.state.status]}</dd>
 					<dt class="text-black/50">Bolsa</dt>
 					<dd>🌸 {selectedRobot.state.bag.flowers} · 📄 {selectedRobot.state.bag.papers}</dd>
 				</dl>
@@ -310,6 +357,25 @@ fin`;
 					Ejecutá o avanzá un paso para inspeccionar el robot.
 				</p>{/if}
 		</aside>
+
+		<div
+			class="resize-handle resize-handle-x"
+			role="separator"
+			aria-label="Cambiar ancho de los paneles"
+			aria-orientation="vertical"
+			onpointerdown={(event) => startResize('x', event)}
+			onpointermove={resize}
+			onpointerup={stopResize}
+		></div>
+		<div
+			class="resize-handle resize-handle-y"
+			role="separator"
+			aria-label="Cambiar alto de los paneles"
+			aria-orientation="horizontal"
+			onpointerdown={(event) => startResize('y', event)}
+			onpointermove={resize}
+			onpointerup={stopResize}
+		></div>
 	</section>
 
 	<footer
@@ -318,3 +384,65 @@ fin`;
 		<span>{statusMessage}</span><span>{snapshot ? `${snapshot.stepCount} pasos` : 'Listo'}</span>
 	</footer>
 </main>
+
+<style>
+	.workspace {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1px;
+	}
+
+	.resize-handle {
+		display: none;
+		touch-action: none;
+		background: rgb(0 0 0 / 10%);
+	}
+
+	@media (min-width: 64rem) {
+		.workspace {
+			grid-template-columns: var(--split-x) 6px minmax(340px, 1fr);
+			grid-template-rows: var(--split-y) 6px minmax(180px, 1fr);
+			gap: 0;
+		}
+		.panel-editor {
+			grid-column: 1;
+			grid-row: 1;
+		}
+		.panel-city {
+			grid-column: 3;
+			grid-row: 1;
+		}
+		.panel-diagnostics {
+			grid-column: 1;
+			grid-row: 3;
+		}
+		.panel-inspector {
+			grid-column: 3;
+			grid-row: 3;
+		}
+		.resize-handle {
+			display: block;
+			position: relative;
+			z-index: 5;
+		}
+		.resize-handle::after {
+			position: absolute;
+			content: '';
+			inset: -3px;
+		}
+		.resize-handle:hover,
+		.resize-handle:active {
+			background: #568879;
+		}
+		.resize-handle-x {
+			grid-column: 2;
+			grid-row: 1 / 4;
+			cursor: col-resize;
+		}
+		.resize-handle-y {
+			grid-column: 1 / 4;
+			grid-row: 2;
+			cursor: row-resize;
+		}
+	}
+</style>
