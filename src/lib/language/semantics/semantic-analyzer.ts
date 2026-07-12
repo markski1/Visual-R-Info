@@ -72,6 +72,7 @@ class SemanticAnalyzer {
 	public constructor(private readonly program: ProgramNode) {}
 
 	public analyze(): SemanticAnalysisResult {
+		// Primero se registran los nombres globales para permitir referencias a procesos y tipos declarados más adelante.
 		this.declareTopLevel();
 		for (const area of this.program.areas) this.analyzeArea(area);
 		for (const process of this.program.processes) this.analyzeProcess(process);
@@ -147,6 +148,7 @@ class SemanticAnalyzer {
 	}
 
 	private analyzeProcess(process: ProcessDeclaration): void {
+		// Cada proceso tiene su propio ámbito, que puede consultar las declaraciones globales pero no las variables de otro robot.
 		const scope = new Scope(`proceso:${process.name.name}`, this.declarations);
 		for (const parameter of process.parameters) {
 			this.declare(scope, {

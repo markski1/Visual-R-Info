@@ -36,6 +36,7 @@ class Lexer {
 	public constructor(private readonly source: string) {}
 
 	public scan(): LexerResult {
+		// La trivia se conserva separada: no afecta la gramática, pero sirve para diagnósticos y futuras herramientas de edición.
 		while (!this.isAtEnd()) {
 			const character = this.currentCharacter();
 
@@ -250,6 +251,7 @@ class Lexer {
 	private advanceCodePoint(): void {
 		const codePoint = this.source.codePointAt(this.offset);
 		if (codePoint === undefined) return;
+		// CodeMirror usa offsets UTF-16; los caracteres fuera del BMP ocupan dos unidades.
 		const width = codePoint > 0xffff ? 2 : 1;
 		this.offset += width;
 		this.column += width;

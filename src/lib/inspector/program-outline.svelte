@@ -59,9 +59,7 @@
 	<summary class="cursor-pointer text-xs font-semibold"> [Avanzado] Analisis AST </summary>
 	{#if program}
 		<div class="text-muted-foreground mt-3 text-[11px] leading-relaxed">
-			<p>
-				Estructura AST desde el analizador.
-			</p>
+			<p>Estructura AST desde el analizador.</p>
 			<ul class="mt-3 space-y-1 border-l pl-3">
 				<li>
 					<details open>

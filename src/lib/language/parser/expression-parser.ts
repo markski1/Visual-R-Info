@@ -103,6 +103,7 @@ export class Parser {
 	private parseBinaryExpression(minimumPrecedence: number): Expression {
 		let left = this.parsePrefixExpression();
 
+		// Precedencia ascendente: al pedir `precedence + 1` a la derecha, operadores iguales quedan asociados a la izquierda.
 		while (true) {
 			const operatorToken = this.current();
 			const operator = BINARY_OPERATORS[operatorToken.kind];
@@ -179,6 +180,7 @@ export class Parser {
 		}
 
 		this.report(token, `Se esperaba una expresión, pero apareció ${describeToken(token)}.`);
+		// Avanzar sólo si no estamos frente a un delimitador permite que el parser de programa retome desde la siguiente instrucción.
 		if (!this.at(TokenKind.EndOfFile) && !isExpressionBoundary(token.kind)) this.advance();
 
 		if (canStartExpression(this.current().kind)) {

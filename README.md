@@ -8,6 +8,10 @@ R-Info es un lenguaje y entorno educativo de la Facultad de Informática de la U
 
 El proyecto fue desarrollado por [Markski](https://markski.ar) en TypeScript con SvelteKit y Svelte. Usa CodeMirror para el editor de código, Canvas para representar la ciudad y Tailwind CSS con shadcn-svelte para la interfaz gráfica.
 
+## Lenguaje y runtime
+
+Para conocer cómo se analiza y ejecuta R-Info en esta implementación (lexer, parser, AST, análisis semántico, escenarios, runtime, eventos y CMRE) mirá [LENGUAJE.md](LENGUAJE.md).
+
 ## Documentación de referencia
 
 La implementación toma como referencia, ademas de mi experiencia con el programa, y el material que se da en la clase del primer semestre, material institucional publicado por la Facultad de Informática de la UNLP:
