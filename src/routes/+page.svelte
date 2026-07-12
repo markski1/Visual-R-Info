@@ -20,6 +20,10 @@
 
 	import CodeEditor from '$lib/editor/code-editor.svelte';
 	import { DEFAULT_EXAMPLE, EXAMPLE_PROGRAMS } from '$lib/examples.js';
+	import ProgramOutline from '$lib/inspector/program-outline.svelte';
+	import SchedulingTimeline, {
+		type SchedulingEntry
+	} from '$lib/inspector/scheduling-timeline.svelte';
 	import { parseScenario, serializeScenario } from '$lib/persistence/scenario-file.js';
 	import CityCanvas from '$lib/visualizer/city-canvas.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -48,6 +52,7 @@
 	let snapshot: RuntimeSnapshot | undefined = $state();
 	let activeLines: { robotId: string; span: SourceSpan; colorIndex: number }[] = $state([]);
 	let robotStatusMessages: Record<string, string> = $state({});
+	let schedulingEntries: SchedulingEntry[] = $state([]);
 	let running = $state(false);
 	let statusMessage = $state('Programa válido. Listo para ejecutar.');
 	let runtimeError = $state('');
@@ -194,6 +199,7 @@
 			trail = [];
 			activeLines = [];
 			robotStatusMessages = {};
+			schedulingEntries = [];
 			runtimeError = '';
 			statusMessage = analysis.program
 				? 'Programa válido. Listo para ejecutar.'
@@ -209,13 +215,15 @@
 
 	function validate(): void {
 		clearTimeout(analysisTimer);
-		const sourceChanged = analyzedSource !== source;
 		analysis = analyze(source);
 		analyzedSource = source;
-		if (sourceChanged) clearRuntime();
-		statusMessage = analysis.program
-			? 'No encontramos errores. El programa está listo.'
-			: `Encontramos ${analysis.diagnostics.length} problema${analysis.diagnostics.length === 1 ? '' : 's'}.`;
+		clearRuntime();
+		const prepared = initializeRuntime();
+		statusMessage = prepared
+			? 'No encontramos errores. La ciudad y los robots están listos para ejecutar.'
+			: analysis.program
+				? 'No se pudo preparar la ejecución.'
+				: `Encontramos ${analysis.diagnostics.length} problema${analysis.diagnostics.length === 1 ? '' : 's'}.`;
 		const first = analysis.diagnostics.find(({ span }) => span !== undefined)?.span;
 		if (first !== undefined) editor.reveal(first);
 	}
@@ -229,6 +237,11 @@
 			statusMessage = 'Corregí los errores antes de ejecutar.';
 			return undefined;
 		}
+		return initializeRuntime();
+	}
+
+	function initializeRuntime(): RInfoRuntime | undefined {
+		if (analysis.program === undefined) return undefined;
 		const created = createRuntime(analysis.program, { corners: scenarioCorners });
 		if (!created.ok) {
 			runtimeError = created.error.message;
@@ -306,7 +319,8 @@
 					...activeLines.filter(({ robotId }) => robotId !== event.robotId),
 					{ robotId: event.robotId, span: event.span, colorIndex: robotColorIndex(event.robotId) }
 				];
-				recordRobotActivity(event.robotId, `Ejecutando línea ${event.span.start.line}.`);
+				recordSchedulingTurn(event.robotId, event.span.start.line);
+				recordRobotActivity(event.robotId, `Ejecutando línea ${event.span.start.line}.`, false);
 			} else if (event.kind === 'robot-moved') {
 				if (event.movement === 'walk') {
 					trail = [...trail, { robotId: event.robotId, from: event.from, to: event.to }];
@@ -343,8 +357,20 @@
 					event.robotId,
 					event.reason === 'message' ? 'Esperando un mensaje.' : 'Esperando una esquina.'
 				);
+			} else if (event.kind === 'corner-locked') {
+				recordRobotActivity(
+					event.robotId,
+					`Bloqueó la esquina (${event.coordinate.avenue}, ${event.coordinate.street}).`
+				);
+			} else if (event.kind === 'corner-unlocked') {
+				recordRobotActivity(
+					event.robotId,
+					`Liberó la esquina (${event.coordinate.avenue}, ${event.coordinate.street}).`
+				);
 			} else if (event.kind === 'runtime-error') {
 				runtimeError = event.error.message;
+				if (event.robotId)
+					recordSchedulingOutcome(event.robotId, 'La ejecución se detuvo por un error.');
 				statusMessage = event.robotId
 					? `${event.robotId}: la ejecución se detuvo por un error.`
 					: 'La ejecución se detuvo por un error.';
@@ -354,9 +380,29 @@
 		}
 	}
 
-	function recordRobotActivity(robotId: string, message: string): void {
+	function recordRobotActivity(robotId: string, message: string, updateTrace = true): void {
 		robotStatusMessages = { ...robotStatusMessages, [robotId]: message };
+		if (updateTrace) recordSchedulingOutcome(robotId, message);
 		statusMessage = `${robotId}: ${message}`;
+	}
+
+	function recordSchedulingTurn(robotId: string, line: number): void {
+		const instruction = source.split(/\r?\n/u)[line - 1]?.trim() || 'instrucción';
+		const entry: SchedulingEntry = {
+			step: runtime?.state.stepCount ?? schedulingEntries.length + 1,
+			robotId,
+			line,
+			instruction
+		};
+		schedulingEntries = [...schedulingEntries, entry].slice(-250);
+	}
+
+	function recordSchedulingOutcome(robotId: string, outcome: string): void {
+		const index = schedulingEntries.findLastIndex((entry) => entry.robotId === robotId);
+		if (index < 0) return;
+		schedulingEntries = schedulingEntries.map((entry, entryIndex) =>
+			entryIndex === index ? { ...entry, outcome } : entry
+		);
 	}
 
 	function revealDiagnostic(diagnostic: Diagnostic): void {
@@ -574,6 +620,7 @@
 		snapshot = undefined;
 		activeLines = [];
 		robotStatusMessages = {};
+		schedulingEntries = [];
 		trail = [];
 	}
 
@@ -870,6 +917,7 @@
 			{:else}
 				<p class="text-muted-foreground text-xs">{statusMessage}</p>
 			{/if}
+			<ProgramOutline program={analysis.program} />
 		</section>
 
 		<aside
@@ -930,6 +978,9 @@
 			{:else}<p class="text-muted-foreground text-xs">
 					Ejecutá o avanzá un paso para inspeccionar el robot.
 				</p>{/if}
+			{#if (snapshot?.robots.length ?? 0) >= 2}
+				<SchedulingTimeline entries={schedulingEntries} robotCount={snapshot?.robots.length ?? 0} />
+			{/if}
 			<section class="border-border mt-4 space-y-3 border-t pt-3">
 				<div>
 					<h3 class="text-xs font-semibold">Objetos en la ciudad</h3>
