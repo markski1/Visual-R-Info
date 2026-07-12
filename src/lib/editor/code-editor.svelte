@@ -360,14 +360,6 @@
 			setActiveLines.of(currentActiveLines),
 			setColorMarkers.of(currentColorMarkers)
 		];
-		const latestLine = currentActiveLines.at(-1);
-		if (latestLine !== undefined) {
-			effects.push(
-				EditorView.scrollIntoView(Math.min(latestLine.span.start.offset, view.state.doc.length), {
-					y: 'center'
-				})
-			);
-		}
 		view.dispatch(setDiagnostics(view.state, lint), { effects });
 	}
 

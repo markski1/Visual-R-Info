@@ -297,6 +297,15 @@
 		const index = Math.max(0, currentSnapshot?.robots.findIndex(({ id }) => id === robotId) ?? 0);
 		return color(`--robot-${(index % 5) + 1}`);
 	}
+
+	export function focusRobot(robotId: string): void {
+		const robot = snapshot?.robots.find(({ id }) => id === robotId);
+		if (robot === undefined) return;
+		centerAvenue = robot.state.position.avenue;
+		centerStreet = robot.state.position.street;
+		cameraInitialized = true;
+		draw();
+	}
 </script>
 
 <div class="bg-card relative h-full min-h-[300px] overflow-hidden lg:min-h-0" bind:this={container}>

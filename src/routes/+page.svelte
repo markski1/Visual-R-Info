@@ -41,6 +41,7 @@
 	type TrailSegment = { robotId: string; from: Coordinate; to: Coordinate };
 
 	let source = $state(DEFAULT_EXAMPLE.source);
+	let fileName = $state(`${DEFAULT_EXAMPLE.id}.ri`);
 	let analysis: AnalysisResult = $state(analyze(DEFAULT_EXAMPLE.source));
 	let runtime: RInfoRuntime | undefined = $state();
 	let snapshot: RuntimeSnapshot | undefined = $state();
@@ -53,11 +54,12 @@
 	let executionTimer: ReturnType<typeof setTimeout> | undefined;
 	let analyzedSource = DEFAULT_EXAMPLE.source;
 	let workspace: HTMLElement;
+	let cityCanvas: { focusRobot(robotId: string): void };
 	let fileInput: HTMLInputElement;
 	let settingsDialog: HTMLDialogElement;
 	let welcomeDialog: HTMLDialogElement;
-	let executionSpeed = $state(340);
-	const executionDelay = $derived(540 - executionSpeed);
+	let executionSpeed = $state(355);
+	const executionDelay = $derived(530 - executionSpeed);
 	let scenarioCorners: ScenarioCorner[] = $state([]);
 	let trail: TrailSegment[] = $state([]);
 	let selectedCoordinate = $state<Coordinate>({ avenue: 1, street: 1 });
@@ -136,12 +138,17 @@
 	$effect(() => {
 		const currentSource = source;
 		const currentCorners = scenarioCorners;
+		const currentFileName = fileName;
 		if (!storageReady) return;
 		clearTimeout(storageTimer);
 		storageTimer = setTimeout(() => {
 			localStorage.setItem(
 				STORAGE_KEY,
-				JSON.stringify({ source: currentSource, corners: currentCorners })
+				JSON.stringify({
+					source: currentSource,
+					corners: currentCorners,
+					fileName: currentFileName
+				})
 			);
 		}, 300);
 	});
@@ -361,11 +368,10 @@
 	}
 
 	function saveFile(): void {
-		const programName = /\bprograma\s+([\p{L}\p{N}_-]+)/u.exec(source)?.[1] ?? 'programa';
 		const url = URL.createObjectURL(new Blob([source], { type: 'text/plain;charset=utf-8' }));
 		const link = document.createElement('a');
 		link.href = url;
-		link.download = `${programName}.ri`;
+		link.download = fileName;
 		link.click();
 		URL.revokeObjectURL(url);
 		statusMessage = `Archivo ${link.download} guardado.`;
@@ -379,6 +385,7 @@
 			return;
 		}
 		source = await file.text();
+		fileName = file.name;
 		scenarioCorners = [];
 		trail = [];
 		runtimeError = '';
@@ -476,6 +483,7 @@
 	function loadExample(): void {
 		const example = EXAMPLE_PROGRAMS.find(({ id }) => id === selectedExampleId) ?? DEFAULT_EXAMPLE;
 		source = example.source;
+		fileName = `${example.id}.ri`;
 		scenarioCorners = [];
 		rebuildRuntime();
 		settingsDialog.close();
@@ -503,8 +511,17 @@
 		const stored = localStorage.getItem(STORAGE_KEY);
 		if (stored !== null) {
 			try {
-				const workspace = JSON.parse(stored) as { source?: unknown; corners?: unknown };
+				const workspace = JSON.parse(stored) as {
+					source?: unknown;
+					corners?: unknown;
+					fileName?: unknown;
+				};
 				if (typeof workspace.source === 'string') source = workspace.source;
+				if (
+					typeof workspace.fileName === 'string' &&
+					workspace.fileName.toLocaleLowerCase().endsWith('.ri')
+				)
+					fileName = workspace.fileName;
 				if (isStoredCorners(workspace.corners)) scenarioCorners = workspace.corners;
 			} catch {
 				localStorage.removeItem(STORAGE_KEY);
@@ -592,7 +609,7 @@
 				<input
 					id="execution-speed"
 					type="range"
-					min="40"
+					min="30"
 					max="500"
 					step="10"
 					bind:value={executionSpeed}
@@ -629,7 +646,7 @@
 	>
 		<section class="panel-editor bg-background min-h-[480px] min-w-0 overflow-hidden lg:min-h-0">
 			<div class="border-border flex h-9 items-center justify-between gap-3 border-b px-3 text-xs">
-				<span>programa.ri</span>
+				<span>{fileName}</span>
 				<div class="flex items-center gap-1">
 					<Button variant="ghost" size="xs" onclick={() => fileInput.click()}
 						><FolderOpen /> Abrir</Button
@@ -658,6 +675,7 @@
 			</div>
 			<div class="h-[calc(100%-2.25rem)]">
 				<CityCanvas
+					bind:this={cityCanvas}
 					{snapshot}
 					lastAction={statusMessage}
 					{theme}
@@ -712,13 +730,18 @@
 				<div class="space-y-3">
 					{#each snapshot.robots as robot, robotIndex (robot.id)}
 						<section class="border-border bg-muted/35 rounded-md border p-3">
-							<div class="mb-3 flex items-center gap-2">
+							<button
+								type="button"
+								class="hover:bg-muted mb-3 flex w-full items-center gap-2 rounded-sm p-1 text-left"
+								title={`Centrar la ciudad en ${robot.id}`}
+								onclick={() => cityCanvas?.focusRobot(robot.id)}
+							>
 								<span
 									class="robot-preview"
 									style={`--robot-color: var(--robot-${(robotIndex % 5) + 1}); transform: rotate(${orientationDegrees[robot.state.orientation]}deg);`}
 								></span>
 								<span class="text-xs font-semibold">{robot.id}</span>
-							</div>
+							</button>
 							<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
 								<dt class="text-muted-foreground">Posición</dt>
 								<dd>({robot.state.position.avenue}, {robot.state.position.street})</dd>
@@ -751,8 +774,7 @@
 				<div>
 					<h3 class="text-xs font-semibold">Objetos en la ciudad</h3>
 					<p class="text-muted-foreground mt-1 text-[11px]">
-						Esquina seleccionada: {selectedCoordinate.avenue}, {selectedCoordinate.street}. Usá *
-						para completar una avenida o calle entera.
+						Esquina seleccionada: {selectedCoordinate.avenue}, {selectedCoordinate.street}.
 					</p>
 				</div>
 				<div class="grid grid-cols-2 gap-2">

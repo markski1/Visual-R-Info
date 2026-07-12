@@ -185,8 +185,9 @@ fin`
 	{
 		id: 'cmre',
 		name: 'Concurrencia multirrobot',
-		description: 'Dos robots coordinan un mensaje y un bloqueo mediante las primitivas de CMRE.',
-		source: `programa comunicacion
+		description:
+			'Dos robots se coordinan por mensaje y recorren simultáneamente un área compartida.',
+		source: `programa cmre
 areas
   compartida: AreaC(1,1,100,100)
 robots
@@ -195,15 +196,24 @@ robots
     valor: numero
   comenzar
     valor:=42
-    bloquearEsquina(1,1)
     enviarMensaje(valor,R2)
-    liberarEsquina(1,1)
+		repetir 6
+		  mover
+		derecha
+		repetir 6
+		  mover
+		Informar(valor)
   fin
   robot receptor
   variables
     recibido: numero
   comenzar
     recibirMensaje(recibido,R1)
+		repetir 4
+		  mover
+		derecha
+		repetir 8
+		  mover
     Informar(recibido)
   fin
 variables
@@ -212,8 +222,8 @@ variables
 comenzar
   AsignarArea(R1,compartida)
   AsignarArea(R2,compartida)
-  Iniciar(R1,1,1)
-  Iniciar(R2,2,1)
+	Iniciar(R1,15,15)
+	Iniciar(R2,25,15)
 fin`
 	},
 	{
