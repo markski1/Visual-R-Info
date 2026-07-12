@@ -192,6 +192,27 @@ fin`;
 		});
 	});
 
+	it('aplica el límite de pasos también al avanzar de a un paso', () => {
+		const source = COMPLETE_PROGRAM.replace(
+			'    mientras (n<7)\n      n:=n+1',
+			'    mientras (V)\n      derecha'
+		);
+		const analysis = analyze(source);
+		if (analysis.program === undefined) throw new Error('El programa de prueba debe ser válido.');
+		const created = createRuntime(analysis.program, {}, { maxSteps: 3 });
+		if (!created.ok) throw new Error(created.error.message);
+		created.value.step();
+		created.value.step();
+		created.value.step();
+		expect(created.value.step()).toContainEqual(
+			expect.objectContaining({
+				kind: 'runtime-error',
+				error: expect.objectContaining({ code: 'RUN020' })
+			})
+		);
+		expect(created.value.state.status).toBe('failed');
+	});
+
 	it('intercala robots CMRE y entrega mensajes aunque el receptor espere primero', () => {
 		const source = readFileSync(
 			new URL('../../../../tests/fixtures/valid/cmre-completo.ri', import.meta.url),

@@ -20,6 +20,7 @@
 
 	import CodeEditor from '$lib/editor/code-editor.svelte';
 	import { DEFAULT_EXAMPLE, EXAMPLE_PROGRAMS } from '$lib/examples.js';
+	import { parseScenario, serializeScenario } from '$lib/persistence/scenario-file.js';
 	import CityCanvas from '$lib/visualizer/city-canvas.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -46,6 +47,7 @@
 	let runtime: RInfoRuntime | undefined = $state();
 	let snapshot: RuntimeSnapshot | undefined = $state();
 	let activeLines: { robotId: string; span: SourceSpan; colorIndex: number }[] = $state([]);
+	let robotStatusMessages: Record<string, string> = $state({});
 	let running = $state(false);
 	let statusMessage = $state('Programa válido. Listo para ejecutar.');
 	let runtimeError = $state('');
@@ -56,6 +58,7 @@
 	let workspace: HTMLElement;
 	let cityCanvas: { focusRobot(robotId: string): void };
 	let fileInput: HTMLInputElement;
+	let scenarioInput: HTMLInputElement;
 	let settingsDialog: HTMLDialogElement;
 	let welcomeDialog: HTMLDialogElement;
 	let executionSpeed = $state(355);
@@ -139,6 +142,10 @@
 		const currentSource = source;
 		const currentCorners = scenarioCorners;
 		const currentFileName = fileName;
+		const currentExecutionSpeed = executionSpeed;
+		const currentSplitX = splitX;
+		const currentSplitCity = splitCity;
+		const currentSplitY = splitY;
 		if (!storageReady) return;
 		clearTimeout(storageTimer);
 		storageTimer = setTimeout(() => {
@@ -147,7 +154,11 @@
 				JSON.stringify({
 					source: currentSource,
 					corners: currentCorners,
-					fileName: currentFileName
+					fileName: currentFileName,
+					executionSpeed: currentExecutionSpeed,
+					splitX: currentSplitX,
+					splitCity: currentSplitCity,
+					splitY: currentSplitY
 				})
 			);
 		}, 300);
@@ -181,6 +192,7 @@
 			snapshot = undefined;
 			trail = [];
 			activeLines = [];
+			robotStatusMessages = {};
 			runtimeError = '';
 			statusMessage = analysis.program
 				? 'Programa válido. Listo para ejecutar.'
@@ -293,25 +305,57 @@
 					...activeLines.filter(({ robotId }) => robotId !== event.robotId),
 					{ robotId: event.robotId, span: event.span, colorIndex: robotColorIndex(event.robotId) }
 				];
-				statusMessage = `Ejecutando línea ${event.span.start.line}.`;
+				recordRobotActivity(event.robotId, `Ejecutando línea ${event.span.start.line}.`);
 			} else if (event.kind === 'robot-moved') {
 				if (event.movement === 'walk') {
 					trail = [...trail, { robotId: event.robotId, from: event.from, to: event.to }];
-					statusMessage = `El robot avanzó hasta (${event.to.avenue}, ${event.to.street}).`;
+					recordRobotActivity(
+						event.robotId,
+						`Avanzó hasta (${event.to.avenue}, ${event.to.street}).`
+					);
 				} else {
-					statusMessage = `El robot se posicionó en (${event.to.avenue}, ${event.to.street}).`;
+					recordRobotActivity(
+						event.robotId,
+						`Se posicionó en (${event.to.avenue}, ${event.to.street}).`
+					);
 				}
 			} else if (event.kind === 'robot-turned') {
-				statusMessage = 'El robot giró a la derecha.';
+				recordRobotActivity(event.robotId, 'Giró a la derecha.');
+			} else if (event.kind === 'object-taken') {
+				recordRobotActivity(
+					event.robotId,
+					`Tomó ${event.object === 'flower' ? 'una flor' : 'un papel'}.`
+				);
+			} else if (event.kind === 'object-dropped') {
+				recordRobotActivity(
+					event.robotId,
+					`Depositó ${event.object === 'flower' ? 'una flor' : 'un papel'}.`
+				);
 			} else if (event.kind === 'output') {
-				statusMessage = `Informar: ${event.values.join(', ')}`;
+				recordRobotActivity(event.robotId, `Informar: ${event.values.join(', ')}`);
+			} else if (event.kind === 'message-sent') {
+				recordRobotActivity(event.robotId, `Envió un mensaje a ${event.peerId}.`);
+			} else if (event.kind === 'message-received') {
+				recordRobotActivity(event.robotId, `Recibió un mensaje de ${event.peerId}.`);
+			} else if (event.kind === 'robot-blocked') {
+				recordRobotActivity(
+					event.robotId,
+					event.reason === 'message' ? 'Esperando un mensaje.' : 'Esperando una esquina.'
+				);
 			} else if (event.kind === 'runtime-error') {
 				runtimeError = event.error.message;
-				statusMessage = 'La ejecución se detuvo por un error.';
+				statusMessage = event.robotId
+					? `${event.robotId}: la ejecución se detuvo por un error.`
+					: 'La ejecución se detuvo por un error.';
 			} else if (event.kind === 'program-finished') {
 				statusMessage = 'Programa finalizado.';
 			}
 		}
+	}
+
+	function recordRobotActivity(robotId: string, message: string): void {
+		robotStatusMessages = { ...robotStatusMessages, [robotId]: message };
+		statusMessage = `${robotId}: ${message}`;
 	}
 
 	function revealDiagnostic(diagnostic: Diagnostic): void {
@@ -367,6 +411,21 @@
 		(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 	}
 
+	function resizeWithKeyboard(axis: 'editor' | 'city' | 'diagnostics', event: KeyboardEvent): void {
+		const decrease = event.key === 'ArrowLeft' || event.key === 'ArrowDown';
+		const increase = event.key === 'ArrowRight' || event.key === 'ArrowUp';
+		if (!decrease && !increase) return;
+		event.preventDefault();
+		const delta = increase ? 2 : -2;
+		if (axis === 'editor') {
+			splitX = Math.max(20, Math.min(splitCity - 30, splitX + delta));
+		} else if (axis === 'city') {
+			splitCity = Math.max(splitX + 30, Math.min(90, splitCity + delta));
+		} else {
+			splitY = Math.max(35, Math.min(90, splitY + delta));
+		}
+	}
+
 	function saveFile(): void {
 		const url = URL.createObjectURL(new Blob([source], { type: 'text/plain;charset=utf-8' }));
 		const link = document.createElement('a');
@@ -377,7 +436,7 @@
 		statusMessage = `Archivo ${link.download} guardado.`;
 	}
 
-	async function loadFile(file: File | undefined): Promise<void> {
+	async function loadProgramFile(file: File | undefined): Promise<void> {
 		if (file === undefined) return;
 		if (!file.name.toLocaleLowerCase().endsWith('.ri')) {
 			runtimeError = 'Sólo se pueden abrir archivos con extensión .ri.';
@@ -393,6 +452,40 @@
 		fileInput.value = '';
 	}
 
+	function saveScenario(): void {
+		const url = URL.createObjectURL(
+			new Blob([serializeScenario(scenarioCorners)], { type: 'application/json;charset=utf-8' })
+		);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName.replace(/\.ri$/iu, '') + '.scenario.json';
+		link.click();
+		URL.revokeObjectURL(url);
+		statusMessage = `Escenario ${link.download} guardado.`;
+	}
+
+	async function loadScenarioFile(file: File | undefined): Promise<void> {
+		if (file === undefined) return;
+		if (!scenarioEditable) {
+			runtimeError = 'Reiniciá la ejecución antes de cargar un escenario.';
+			return;
+		}
+		const parsed = parseScenario(await file.text());
+		if (!parsed.ok) {
+			runtimeError = parsed.message;
+			statusMessage = 'No se pudo cargar el escenario.';
+			return;
+		}
+		scenarioCorners = parsed.value.corners.map((corner) => ({
+			coordinate: { ...corner.coordinate },
+			contents: { ...corner.contents }
+		}));
+		rebuildRuntime();
+		runtimeError = '';
+		statusMessage = `Escenario ${file.name} cargado.`;
+		scenarioInput.value = '';
+	}
+
 	function allowFileDrop(event: DragEvent): void {
 		if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
 	}
@@ -400,7 +493,9 @@
 	function dropFile(event: DragEvent): void {
 		if (!event.dataTransfer?.types.includes('Files')) return;
 		event.preventDefault();
-		void loadFile(event.dataTransfer.files[0]);
+		const file = event.dataTransfer.files[0];
+		if (file?.name.toLocaleLowerCase().endsWith('.json')) void loadScenarioFile(file);
+		else void loadProgramFile(file);
 	}
 
 	function selectCoordinate(coordinate: Coordinate): void {
@@ -477,6 +572,7 @@
 		runtime = undefined;
 		snapshot = undefined;
 		activeLines = [];
+		robotStatusMessages = {};
 		trail = [];
 	}
 
@@ -515,6 +611,10 @@
 					source?: unknown;
 					corners?: unknown;
 					fileName?: unknown;
+					executionSpeed?: unknown;
+					splitX?: unknown;
+					splitCity?: unknown;
+					splitY?: unknown;
 				};
 				if (typeof workspace.source === 'string') source = workspace.source;
 				if (
@@ -523,6 +623,10 @@
 				)
 					fileName = workspace.fileName;
 				if (isStoredCorners(workspace.corners)) scenarioCorners = workspace.corners;
+				if (isExecutionSpeed(workspace.executionSpeed)) executionSpeed = workspace.executionSpeed;
+				if (isLayoutSplit(workspace.splitX)) splitX = workspace.splitX;
+				if (isLayoutSplit(workspace.splitCity)) splitCity = workspace.splitCity;
+				if (isLayoutSplit(workspace.splitY)) splitY = workspace.splitY;
 			} catch {
 				localStorage.removeItem(STORAGE_KEY);
 			}
@@ -554,6 +658,14 @@
 				);
 			})
 		);
+	}
+
+	function isExecutionSpeed(value: unknown): value is number {
+		return typeof value === 'number' && Number.isInteger(value) && value >= 30 && value <= 500;
+	}
+
+	function isLayoutSplit(value: unknown): value is number {
+		return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
 	}
 
 	function closeSettingsFromBackdrop(event: MouseEvent): void {
@@ -600,7 +712,14 @@
 				type="file"
 				accept=".ri,text/plain"
 				bind:this={fileInput}
-				onchange={(event) => void loadFile(event.currentTarget.files?.[0])}
+				onchange={(event) => void loadProgramFile(event.currentTarget.files?.[0])}
+			/>
+			<input
+				class="hidden"
+				type="file"
+				accept=".json,application/json"
+				bind:this={scenarioInput}
+				onchange={(event) => void loadScenarioFile(event.currentTarget.files?.[0])}
 			/>
 			<div class="flex min-w-0 items-center gap-2 px-1">
 				<label for="execution-speed" class="text-muted-foreground text-xs whitespace-nowrap"
@@ -748,7 +867,14 @@
 								<dt class="text-muted-foreground">Orientación</dt>
 								<dd>{orientationLabels[robot.state.orientation]}</dd>
 								<dt class="text-muted-foreground">Estado</dt>
-								<dd>{statusLabels[robot.state.status]}</dd>
+								<dd>
+									<p>{statusLabels[robot.state.status]}</p>
+									{#if robot.state.status === 'running' && robotStatusMessages[robot.id]}
+										<p class="text-muted-foreground mt-1 text-[11px] leading-snug">
+											{robotStatusMessages[robot.id]}
+										</p>
+									{/if}
+								</dd>
 								<dt class="text-muted-foreground">Bolsa</dt>
 								<dd>🌸 {robot.state.bag.flowers} · 📄 {robot.state.bag.papers}</dd>
 							</dl>
@@ -826,35 +952,59 @@
 					disabled={!scenarioEditable}
 					onclick={addObjects}>Agregar</Button
 				>
+				<div class="grid grid-cols-2 gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={!scenarioEditable}
+						onclick={() => scenarioInput.click()}><FolderOpen /> Cargar</Button
+					>
+					<Button variant="outline" size="sm" onclick={saveScenario}><Save /> Guardar</Button>
+				</div>
 			</section>
 		</aside>
 
 		<div
 			class="resize-handle resize-handle-editor"
-			role="separator"
+			role="slider"
+			tabindex="0"
 			aria-label="Cambiar ancho del editor"
 			aria-orientation="vertical"
+			aria-valuemin="20"
+			aria-valuemax={splitCity - 30}
+			aria-valuenow={splitX}
 			onpointerdown={(event) => startResize('editor', event)}
 			onpointermove={resize}
 			onpointerup={stopResize}
+			onkeydown={(event) => resizeWithKeyboard('editor', event)}
 		></div>
 		<div
 			class="resize-handle resize-handle-city"
-			role="separator"
+			role="slider"
+			tabindex="0"
 			aria-label="Cambiar ancho de la ciudad"
 			aria-orientation="vertical"
+			aria-valuemin={splitX + 30}
+			aria-valuemax="90"
+			aria-valuenow={splitCity}
 			onpointerdown={(event) => startResize('city', event)}
 			onpointermove={resize}
 			onpointerup={stopResize}
+			onkeydown={(event) => resizeWithKeyboard('city', event)}
 		></div>
 		<div
 			class="resize-handle resize-handle-diagnostics"
-			role="separator"
+			role="slider"
+			tabindex="0"
 			aria-label="Cambiar alto de los paneles"
 			aria-orientation="horizontal"
+			aria-valuemin="35"
+			aria-valuemax="90"
+			aria-valuenow={splitY}
 			onpointerdown={(event) => startResize('diagnostics', event)}
 			onpointermove={resize}
 			onpointerup={stopResize}
+			onkeydown={(event) => resizeWithKeyboard('diagnostics', event)}
 		></div>
 	</section>
 

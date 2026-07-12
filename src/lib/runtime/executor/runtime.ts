@@ -35,6 +35,10 @@ export interface RunOptions {
 	readonly maxSteps?: number;
 }
 
+export interface RuntimeOptions {
+	readonly maxSteps?: number;
+}
+
 export interface RunResult {
 	readonly events: readonly RuntimeEvent[];
 	readonly status: ExecutionState['status'];
@@ -56,15 +60,21 @@ export interface RuntimeSnapshot {
 	readonly pendingMessages: number;
 }
 
+const DEFAULT_MAX_STEPS = 10_000;
+
 export function createRuntime(
 	program: ValidatedProgram,
-	settings: ScenarioSettings = {}
+	settings: ScenarioSettings = {},
+	options: RuntimeOptions = {}
 ): RuntimeResult<RInfoRuntime> {
+	const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
+	if (!Number.isSafeInteger(maxSteps) || maxSteps < 1)
+		return failure('RUN004', 'El límite de pasos debe ser un entero mayor que cero.');
 	const scenario = loadProgramScenario(program, settings);
 	if (!scenario.ok) return scenario;
 	const state = createExecutionState(program, scenario.value);
 	if (!state.ok) return state;
-	return success(new RInfoRuntime(program, scenario.value, state.value));
+	return success(new RInfoRuntime(program, scenario.value, state.value, maxSteps));
 }
 
 export class RInfoRuntime {
@@ -74,14 +84,31 @@ export class RInfoRuntime {
 	public constructor(
 		private readonly program: ValidatedProgram,
 		private readonly scenario: Scenario,
-		public state: ExecutionState
+		public state: ExecutionState,
+		private readonly maxSteps = DEFAULT_MAX_STEPS
 	) {
 		this.processes = new Map(program.ast.processes.map((process) => [process.name.name, process]));
 	}
 
 	/** Ejecuta una sola línea visible y devuelve los cambios que la UI debe animar. */
 	public step(): readonly RuntimeEvent[] {
+		return this.executeStep(this.maxSteps);
+	}
+
+	private executeStep(maxSteps: number): readonly RuntimeEvent[] {
 		if (this.state.status === 'finished' || this.state.status === 'failed') return [];
+		if (this.state.stepCount >= maxSteps) {
+			this.state.status = 'failed';
+			return [
+				{
+					kind: 'runtime-error',
+					error: {
+						code: 'RUN020',
+						message: `La ejecución superó el límite de ${maxSteps} pasos. Revisá si hay un ciclo que no termina.`
+					}
+				}
+			];
+		}
 		this.state.status = 'running';
 		while (true) {
 			const selected = this.selectRobot();
@@ -128,21 +155,10 @@ export class RInfoRuntime {
 	}
 
 	public run(options: RunOptions = {}): RunResult {
-		const maxSteps = options.maxSteps ?? 10_000;
+		const maxSteps = options.maxSteps ?? this.maxSteps;
 		const events: RuntimeEvent[] = [];
 		while (this.state.status !== 'finished' && this.state.status !== 'failed') {
-			if (this.state.stepCount >= maxSteps) {
-				this.state.status = 'failed';
-				events.push({
-					kind: 'runtime-error',
-					error: {
-						code: 'RUN020',
-						message: `La ejecución superó el límite de ${maxSteps} pasos. Revisá si hay un ciclo que no termina.`
-					}
-				});
-				break;
-			}
-			events.push(...this.step());
+			events.push(...this.executeStep(maxSteps));
 		}
 		return { events, status: this.state.status, steps: this.state.stepCount };
 	}

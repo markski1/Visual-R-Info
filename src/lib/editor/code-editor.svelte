@@ -11,8 +11,10 @@
 	import {
 		Decoration,
 		EditorView,
+		hoverTooltip,
 		keymap,
 		lineNumbers,
+		type Tooltip,
 		ViewPlugin,
 		WidgetType
 	} from '@codemirror/view';
@@ -179,6 +181,33 @@
 		'recibirMensaje'
 	].map((label) => ({ label, type: /^[A-Z]/.test(label) ? 'function' : 'keyword' }));
 
+	const functionDocumentation: Readonly<Record<string, string>> = {
+		mover: 'Avanza una esquina en la orientación actual del robot.',
+		derecha: 'Gira el robot 90° hacia la derecha.',
+		tomarFlor: 'Guarda una flor de la esquina actual en la bolsa.',
+		tomarPapel: 'Guarda un papel de la esquina actual en la bolsa.',
+		depositarFlor: 'Deja una flor de la bolsa en la esquina actual.',
+		depositarPapel: 'Deja un papel de la bolsa en la esquina actual.',
+		HayFlorEnLaEsquina: 'Indica si hay al menos una flor en la esquina actual.',
+		HayPapelEnLaEsquina: 'Indica si hay al menos un papel en la esquina actual.',
+		HayFlorEnLaBolsa: 'Indica si el robot tiene al menos una flor en la bolsa.',
+		HayPapelEnLaBolsa: 'Indica si el robot tiene al menos un papel en la bolsa.',
+		PosAv: 'Devuelve la avenida de la posición actual del robot.',
+		PosCa: 'Devuelve la calle de la posición actual del robot.',
+		Pos: 'Traslada el robot a la avenida y calle indicadas dentro de su área.',
+		Random: 'Guarda en una variable un número aleatorio dentro del rango indicado.',
+		Informar: 'Muestra los valores indicados en la salida del programa.',
+		AsignarArea: 'Asigna un área declarada a un robot antes de iniciarlo.',
+		Iniciar: 'Inicia la ejecución de un robot en la posición indicada.',
+		AreaC: 'Declara un área compartida por varios robots.',
+		AreaP: 'Declara un área privada para un único robot.',
+		AreaPC: 'Declara un área privada con acceso controlado.',
+		bloquearEsquina: 'Reserva una esquina para que otros robots esperen antes de usarla.',
+		liberarEsquina: 'Libera una esquina que este robot había reservado.',
+		enviarMensaje: 'Envía un valor a otro robot.',
+		recibirMensaje: 'Recibe un valor enviado por otro robot; espera si todavía no llegó.'
+	};
+
 	const booleanKinds: ReadonlySet<string> = new Set([TokenKind.True, TokenKind.False]);
 	const commandKinds: ReadonlySet<string> = new Set([
 		TokenKind.AreaC,
@@ -253,6 +282,28 @@
 		return `background: linear-gradient(90deg, ${stops}); box-shadow: inset 4px 0 0 ${colors[0]};`;
 	}
 
+	function documentationTooltip(view: EditorView, pos: number): Tooltip | null {
+		const line = view.state.doc.lineAt(pos);
+		const offset = pos - line.from;
+		const before = line.text.slice(0, offset).match(/[\p{L}_][\p{L}\p{N}_]*$/u)?.[0] ?? '';
+		const after = line.text.slice(offset).match(/^[\p{L}\p{N}_]*/u)?.[0] ?? '';
+		const name = `${before}${after}`;
+		const description = functionDocumentation[name];
+		if (description === undefined || name.length === 0) return null;
+		const from = pos - before.length;
+		return {
+			pos: from,
+			end: from + name.length,
+			above: true,
+			create: () => {
+				const dom = document.createElement('div');
+				dom.className = 'cm-rinfo-tooltip';
+				dom.textContent = description;
+				return { dom };
+			}
+		};
+	}
+
 	onMount(() => {
 		view = new EditorView({
 			parent: host,
@@ -264,6 +315,7 @@
 				syntaxColors,
 				executionLines,
 				colorMarkerField,
+				hoverTooltip(documentationTooltip, { hoverTime: 250, hideOnChange: true }),
 				keymap.of([
 					{ key: 'Tab', run: acceptCompletion },
 					...defaultKeymap,
@@ -300,6 +352,20 @@
 						border: 'none'
 					},
 					'.cm-rinfo-executing-line': { transition: 'background 80ms linear' },
+					'.cm-tooltip.cm-tooltip-hover': {
+						maxWidth: '18rem',
+						border: '1px solid var(--border)',
+						borderRadius: '0',
+						backgroundColor: 'var(--popover)',
+						color: 'var(--popover-foreground)',
+						boxShadow: '0 0.5rem 1.25rem rgb(0 0 0 / 18%)'
+					},
+					'.cm-tooltip-hover .cm-rinfo-tooltip': {
+						padding: '0.5rem 0.625rem',
+						fontFamily: 'var(--font-mono)',
+						fontSize: '0.75rem',
+						lineHeight: '1.4'
+					},
 					'.cm-rinfo-color': {
 						display: 'inline-block',
 						width: '0.7rem',

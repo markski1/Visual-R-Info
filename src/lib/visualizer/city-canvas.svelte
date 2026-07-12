@@ -273,6 +273,20 @@
 		}
 	}
 
+	function onKeydown(event: KeyboardEvent): void {
+		const pan = 3;
+		if (event.key === 'ArrowLeft') centerAvenue -= pan;
+		else if (event.key === 'ArrowRight') centerAvenue += pan;
+		else if (event.key === 'ArrowUp') centerStreet += pan;
+		else if (event.key === 'ArrowDown') centerStreet -= pan;
+		else if (event.key === '+' || event.key === '=') scale = Math.min(24, scale * 1.15);
+		else if (event.key === '-') scale = Math.max(3, scale * 0.87);
+		else return;
+		event.preventDefault();
+		cameraInitialized = true;
+		draw();
+	}
+
 	function visibleBounds() {
 		return {
 			minAvenue: Math.max(1, Math.floor(centerAvenue - width / scale / 2) - 1),
@@ -311,11 +325,15 @@
 <div class="bg-card relative h-full min-h-[300px] overflow-hidden lg:min-h-0" bind:this={container}>
 	<canvas
 		bind:this={canvas}
-		class="block touch-none cursor-grab active:cursor-grabbing"
+		class="block touch-none cursor-grab outline-none focus-visible:ring-ring active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-inset"
+		tabindex="0"
+		aria-label="Ciudad de R-Info"
+		aria-describedby="city-keyboard-help"
 		onwheel={onWheel}
 		onpointerdown={pointerDown}
 		onpointermove={pointerMove}
 		onpointerup={pointerUp}
+		onkeydown={onKeydown}
 	></canvas>
 	<div
 		class="bg-popover/90 text-popover-foreground pointer-events-none absolute top-3 left-3 rounded-md border px-2.5 py-1.5 text-xs shadow-sm backdrop-blur"
@@ -324,5 +342,8 @@
 			? `Esquina (${selected.avenue}, ${selected.street})`
 			: 'Rueda: zoom · Arrastrar: mover'}
 	</div>
+	<p id="city-keyboard-help" class="sr-only">
+		Usá las flechas para desplazar la ciudad y más o menos para cambiar el zoom.
+	</p>
 	<p class="sr-only" aria-live="polite">{lastAction}</p>
 </div>
