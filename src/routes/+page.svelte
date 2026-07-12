@@ -85,6 +85,7 @@
 	let splitCity = $state(72);
 	let splitY = $state(84);
 	let resizeAxis: 'editor' | 'city' | 'diagnostics' | undefined;
+	let mobileTab: 'code' | 'city' = $state('code');
 
 	const orientationLabels = {
 		north: 'Norte',
@@ -757,13 +758,38 @@
 			>
 		</div>
 	</header>
+	<nav
+		class="bg-background border-border grid grid-cols-2 border-b p-1 lg:hidden"
+		aria-label="Paneles de trabajo"
+	>
+		<Button
+			variant={mobileTab === 'code' ? 'secondary' : 'ghost'}
+			size="sm"
+			role="tab"
+			aria-selected={mobileTab === 'code'}
+			aria-controls="mobile-code-panel"
+			onclick={() => (mobileTab = 'code')}>Código</Button
+		>
+		<Button
+			variant={mobileTab === 'city' ? 'secondary' : 'ghost'}
+			size="sm"
+			role="tab"
+			aria-selected={mobileTab === 'city'}
+			aria-controls="mobile-city-panel"
+			onclick={() => (mobileTab = 'city')}>Ciudad e inspector</Button
+		>
+	</nav>
 
 	<section
 		class="workspace bg-border min-h-0 flex-1"
 		style={`--split-x: ${splitX}%; --split-city: ${splitCity}%; --split-y: ${splitY}%;`}
 		bind:this={workspace}
 	>
-		<section class="panel-editor bg-background min-h-[480px] min-w-0 overflow-hidden lg:min-h-0">
+		<section
+			id="mobile-code-panel"
+			class:mobile-panel-hidden={mobileTab !== 'code'}
+			class="panel-editor bg-background min-h-[480px] min-w-0 overflow-hidden lg:min-h-0"
+		>
 			<div class="border-border flex h-9 items-center justify-between gap-3 border-b px-3 text-xs">
 				<span>{fileName}</span>
 				<div class="flex items-center gap-1">
@@ -785,7 +811,11 @@
 			</div>
 		</section>
 
-		<section class="panel-city bg-card min-h-[400px] min-w-0 overflow-hidden lg:min-h-0">
+		<section
+			id="mobile-city-panel"
+			class:mobile-panel-hidden={mobileTab !== 'city'}
+			class="panel-city bg-card min-h-[400px] min-w-0 overflow-hidden lg:min-h-0"
+		>
 			<div class="border-border flex h-9 items-center justify-between gap-3 border-b px-3 text-xs">
 				<span class="min-w-0 truncate font-medium">{statusMessage}</span>
 				<span class="text-muted-foreground shrink-0"
@@ -805,6 +835,7 @@
 		</section>
 
 		<section
+			class:mobile-panel-hidden={mobileTab !== 'code'}
 			class="panel-diagnostics bg-background min-h-[200px] min-w-0 overflow-auto p-3 lg:min-h-0"
 		>
 			<div class="mb-2 flex items-center gap-2 text-xs font-semibold">
@@ -841,7 +872,10 @@
 			{/if}
 		</section>
 
-		<aside class="panel-inspector bg-background min-h-[220px] min-w-0 overflow-auto p-3 lg:min-h-0">
+		<aside
+			class:mobile-panel-hidden={mobileTab !== 'city'}
+			class="panel-inspector bg-background min-h-[220px] min-w-0 overflow-auto p-3 lg:min-h-0"
+		>
 			<div class="mb-3 flex items-center gap-2 text-xs font-semibold">
 				<Bot size={14} /> Inspector
 			</div>
@@ -1158,6 +1192,10 @@
 		background: rgb(0 0 0 / 10%);
 	}
 
+	.mobile-panel-hidden {
+		display: none;
+	}
+
 	.execution-speed::-webkit-slider-thumb {
 		border-radius: 0;
 	}
@@ -1184,6 +1222,10 @@
 	}
 
 	@media (min-width: 64rem) {
+		.mobile-panel-hidden {
+			display: block;
+		}
+
 		:global(html),
 		:global(body) {
 			height: 100%;
