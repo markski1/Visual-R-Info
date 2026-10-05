@@ -1,6 +1,6 @@
-import type { ValidatedProgram } from '../../language/analysis/index.js';
+import type { ValidatedProgram } from '../../language/analysis/analyze.js';
 import type { CallStatement, Expression } from '../../language/ast/index.js';
-import { evaluateExpression } from '../evaluator/index.js';
+import { evaluateExpression } from '../evaluator/expression-evaluator.js';
 import {
 	createArea,
 	createScenario,

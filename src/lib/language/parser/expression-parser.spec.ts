@@ -139,12 +139,12 @@ describe('parseExpression', () => {
 		const expression = parser.parseExpression();
 
 		expect(expressionShape(expression)).toEqual(['+', ['numero', '1'], ['numero', '2']]);
-		expect(parser.getCurrentToken().kind).toBe(TokenKind.Move);
+		expect(parser.current().kind).toBe(TokenKind.Move);
 		expect(parser.getDiagnostics()).toEqual([]);
 
 		const incomplete = new Parser(lex('1 + mover').tokens);
 		incomplete.parseExpression();
-		expect(incomplete.getCurrentToken().kind).toBe(TokenKind.Move);
+		expect(incomplete.current().kind).toBe(TokenKind.Move);
 		expect(incomplete.getDiagnostics()).toHaveLength(1);
 	});
 });

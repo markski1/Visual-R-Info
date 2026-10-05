@@ -3,7 +3,6 @@ import type {
 	BinaryExpression,
 	CallStatement,
 	Expression,
-	ParameterDeclaration,
 	ProcessDeclaration,
 	ProgramNode,
 	Statement,
@@ -20,21 +19,10 @@ export interface SymbolEntry {
 	readonly kind: SymbolKind;
 	readonly type: SemanticType;
 	readonly span: SourceSpan;
-	readonly scope: string;
-}
-
-export interface SymbolTable {
-	readonly symbols: readonly SymbolEntry[];
 }
 
 export interface SemanticAnalysisResult {
-	readonly symbols: SymbolTable;
 	readonly diagnostics: readonly Diagnostic[];
-}
-
-interface ProcessSignature {
-	readonly declaration: ProcessDeclaration;
-	readonly parameters: readonly ParameterDeclaration[];
 }
 
 export function analyzeSemantics(program: ProgramNode): SemanticAnalysisResult {
@@ -44,10 +32,7 @@ export function analyzeSemantics(program: ProgramNode): SemanticAnalysisResult {
 class Scope {
 	private readonly entries = new Map<string, SymbolEntry>();
 
-	public constructor(
-		public readonly name: string,
-		private readonly parent?: Scope
-	) {}
+	public constructor(private readonly parent?: Scope) {}
 
 	public declare(entry: SymbolEntry): SymbolEntry | undefined {
 		const previous = this.entries.get(entry.name);
@@ -63,10 +48,9 @@ class Scope {
 
 class SemanticAnalyzer {
 	private readonly diagnostics: Diagnostic[] = [];
-	private readonly symbols: SymbolEntry[] = [];
-	private readonly declarations = new Scope('programa');
-	private readonly main = new Scope('principal', this.declarations);
-	private readonly processes = new Map<string, ProcessSignature>();
+	private readonly declarations = new Scope();
+	private readonly main = new Scope(this.declarations);
+	private readonly processes = new Map<string, ProcessDeclaration>();
 	private readonly robotTypes = new Set<string>();
 
 	public constructor(private readonly program: ProgramNode) {}
@@ -78,14 +62,13 @@ class SemanticAnalyzer {
 		for (const process of this.program.processes) this.analyzeProcess(process);
 		for (const robot of this.program.robots) {
 			// Los robots CMRE pueden referenciar las instancias declaradas en el bloque principal.
-			const scope = new Scope(`robot:${robot.name.name}`, this.main);
+			const scope = new Scope(this.main);
 			this.declareVariables(robot.variables, scope);
 			this.analyzeStatements(robot.body, scope);
 		}
 		this.analyzeStatements(this.program.body, this.main);
 
 		return {
-			symbols: { symbols: this.symbols },
 			diagnostics: this.diagnostics
 		};
 	}
@@ -96,13 +79,9 @@ class SemanticAnalyzer {
 				name: process.name.name,
 				kind: 'process',
 				type: 'unknown',
-				span: process.name.span,
-				scope: this.declarations.name
+				span: process.name.span
 			});
-			this.processes.set(process.name.name, {
-				declaration: process,
-				parameters: process.parameters
-			});
+			this.processes.set(process.name.name, process);
 		}
 
 		for (const area of this.program.areas) {
@@ -110,8 +89,7 @@ class SemanticAnalyzer {
 				name: area.name.name,
 				kind: 'area',
 				type: 'area',
-				span: area.name.span,
-				scope: this.declarations.name
+				span: area.name.span
 			});
 		}
 
@@ -121,8 +99,7 @@ class SemanticAnalyzer {
 				name: robot.name.name,
 				kind: 'robot-type',
 				type: `robot:${robot.name.name}`,
-				span: robot.name.span,
-				scope: this.declarations.name
+				span: robot.name.span
 			});
 		}
 
@@ -149,14 +126,13 @@ class SemanticAnalyzer {
 
 	private analyzeProcess(process: ProcessDeclaration): void {
 		// Cada proceso tiene su propio ámbito, que puede consultar las declaraciones globales pero no las variables de otro robot.
-		const scope = new Scope(`proceso:${process.name.name}`, this.declarations);
+		const scope = new Scope(this.declarations);
 		for (const parameter of process.parameters) {
 			this.declare(scope, {
 				name: parameter.name.name,
 				kind: 'parameter',
 				type: parameter.typeName,
-				span: parameter.name.span,
-				scope: scope.name
+				span: parameter.name.span
 			});
 		}
 		this.declareVariables(process.variables, scope);
@@ -171,8 +147,7 @@ class SemanticAnalyzer {
 					name: name.name,
 					kind: 'variable',
 					type,
-					span: name.span,
-					scope: scope.name
+					span: name.span
 				});
 			}
 		}
@@ -198,7 +173,6 @@ class SemanticAnalyzer {
 			});
 			return;
 		}
-		this.symbols.push(entry);
 	}
 
 	private analyzeStatements(statements: readonly Statement[], scope: Scope): void {
@@ -388,35 +362,16 @@ class SemanticAnalyzer {
 	private binaryType(expression: BinaryExpression, scope: Scope): SemanticType {
 		const left = this.expressionType(expression.left, scope);
 		const right = this.expressionType(expression.right, scope);
-		if (['+', '-', '*', '/'].includes(expression.operator)) {
-			this.requireType(
-				left,
-				'numero',
-				expression.left.span,
-				`El operador \`${expression.operator}\` necesita números.`
-			);
-			this.requireType(
-				right,
-				'numero',
-				expression.right.span,
-				`El operador \`${expression.operator}\` necesita números.`
-			);
-			return 'numero';
-		}
-		if (expression.operator === '&' || expression.operator === '|') {
-			this.requireType(
-				left,
-				'boolean',
-				expression.left.span,
-				`El operador \`${expression.operator}\` necesita valores booleanos.`
-			);
-			this.requireType(
-				right,
-				'boolean',
-				expression.right.span,
-				`El operador \`${expression.operator}\` necesita valores booleanos.`
-			);
-			return 'boolean';
+		const arithmetic = ['+', '-', '*', '/'].includes(expression.operator);
+		const logical = expression.operator === '&' || expression.operator === '|';
+		if (arithmetic || logical) {
+			const expected = logical ? 'boolean' : 'numero';
+			const message = logical
+				? `El operador \`${expression.operator}\` necesita valores booleanos.`
+				: `El operador \`${expression.operator}\` necesita números.`;
+			this.requireType(left, expected, expression.left.span, message);
+			this.requireType(right, expected, expression.right.span, message);
+			return expected;
 		}
 
 		if (expression.operator === '=' || expression.operator === '<>') {

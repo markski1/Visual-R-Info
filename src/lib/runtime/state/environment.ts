@@ -13,11 +13,7 @@ export class Environment {
 	public constructor(private readonly parent?: Environment) {}
 
 	public declare(name: string, value: RuntimeValue): RuntimeResult<VariableCell> {
-		if (this.bindings.has(name))
-			return failure('RUN010', `La variable \`${name}\` ya existe en este frame.`);
-		const cell = { value };
-		this.bindings.set(name, cell);
-		return success(cell);
+		return this.bind(name, { value });
 	}
 
 	public bind(name: string, cell: VariableCell): RuntimeResult<VariableCell> {

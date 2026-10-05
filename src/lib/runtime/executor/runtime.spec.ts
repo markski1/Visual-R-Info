@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import { analyze } from '../../language/index.js';
-import { CMRE_PROFILE } from '../../language/profiles/index.js';
-import { createRuntime } from './runtime.js';
+import { createRuntime, type RuntimeOptions } from './runtime.js';
+import type { ScenarioSettings } from '../loader/program-loader.js';
 
 const COMPLETE_PROGRAM = `programa ejecucion
 procesos
@@ -39,27 +39,34 @@ comenzar
   Iniciar(R,1,1)
 fin`;
 
+function runtimeFrom(
+	source: string,
+	settings: ScenarioSettings = {},
+	options: RuntimeOptions = {}
+) {
+	const analysis = analyze(source);
+	if (!analysis.program) throw new Error(JSON.stringify(analysis.diagnostics));
+	const created = createRuntime(analysis.program, settings, options);
+	if (!created.ok) throw new Error(created.error.message);
+	return created.value;
+}
+
 describe('ejecutor', () => {
 	it('ejecuta procesos, control de flujo y primitivas hasta terminar', () => {
-		const analysis = analyze(COMPLETE_PROGRAM);
-		expect(analysis.diagnostics).toEqual([]);
-		if (analysis.program === undefined) return;
-		const created = createRuntime(analysis.program, {
+		const runtime = runtimeFrom(COMPLETE_PROGRAM, {
 			corners: [{ coordinate: { avenue: 2, street: 3 }, contents: { flowers: 1, papers: 0 } }]
 		});
-		expect(created.ok).toBe(true);
-		if (!created.ok) return;
 
-		const result = created.value.run();
+		const result = runtime.run();
 		expect(result.status).toBe('finished');
-		expect(created.value.state.robots.get('R')?.state).toMatchObject({
+		expect(runtime.state.robots.get('R')?.state).toMatchObject({
 			position: { avenue: 2, street: 3 },
 			orientation: 'east',
 			bag: { flowers: 0, papers: 0 },
 			status: 'finished'
 		});
-		expect(created.value.state.city.get({ avenue: 2, street: 3 }).flowers).toBe(1);
-		expect(created.value.getSnapshot().areas).toEqual([
+		expect(runtime.state.city.get({ avenue: 2, street: 3 }).flowers).toBe(1);
+		expect(runtime.getSnapshot().areas).toEqual([
 			{
 				name: 'ciudad',
 				type: 'AreaC',
@@ -69,7 +76,7 @@ describe('ejecutor', () => {
 				maxStreet: 100
 			}
 		]);
-		expect(created.value.state.output).toEqual([7]);
+		expect(runtime.state.output).toEqual([7]);
 		expect(result.events.map(({ kind }) => kind)).toEqual(
 			expect.arrayContaining([
 				'robot-moved',
@@ -82,13 +89,10 @@ describe('ejecutor', () => {
 	});
 
 	it('cada step ejecuta una sola instrucción visible con su rango fuente', () => {
-		const analysis = analyze(COMPLETE_PROGRAM);
-		if (analysis.program === undefined) throw new Error('El programa de prueba debe ser válido.');
-		const created = createRuntime(analysis.program, {
+		const runtime = runtimeFrom(COMPLETE_PROGRAM, {
 			corners: [{ coordinate: { avenue: 2, street: 3 }, contents: { flowers: 1, papers: 0 } }]
 		});
-		if (!created.ok) throw new Error(created.error.message);
-		const first = created.value.step();
+		const first = runtime.step();
 		expect(first).toHaveLength(1);
 		expect(first[0]).toMatchObject({
 			kind: 'instruction-started',
@@ -96,15 +100,15 @@ describe('ejecutor', () => {
 			statementKind: 'AssignmentStatement',
 			span: { start: { line: 14 } }
 		});
-		expect(created.value.state.stepCount).toBe(1);
+		expect(runtime.state.stepCount).toBe(1);
 
-		const second = created.value.step();
+		const second = runtime.step();
 		expect(second.filter(({ kind }) => kind === 'instruction-started')).toHaveLength(1);
 		expect(second[0]).toMatchObject({
 			statementKind: 'RepeatStatement',
 			span: { start: { line: 15 } }
 		});
-		expect(created.value.state.stepCount).toBe(2);
+		expect(runtime.state.stepCount).toBe(2);
 	});
 
 	it('distingue Pos de un movimiento para no dibujar un recorrido de teletransporte', () => {
@@ -122,11 +126,8 @@ comenzar
   AsignarArea(R,ciudad)
   Iniciar(R,1,1)
 fin`;
-		const analysis = analyze(source);
-		if (analysis.program === undefined) throw new Error('El programa debe ser válido.');
-		const created = createRuntime(analysis.program);
-		if (!created.ok) throw new Error(created.error.message);
-		const result = created.value.run();
+		const runtime = runtimeFrom(source);
+		const result = runtime.run();
 		expect(result.events).toContainEqual(
 			expect.objectContaining({
 				kind: 'robot-moved',
@@ -139,38 +140,32 @@ fin`;
 
 	it('detiene la ejecución ante un movimiento fuera de la ciudad', () => {
 		const source = COMPLETE_PROGRAM.replace('Iniciar(R,1,1)', 'Iniciar(R,1,100)');
-		const analysis = analyze(source);
-		if (analysis.program === undefined) throw new Error('El programa de prueba debe ser válido.');
-		const created = createRuntime(analysis.program);
-		if (!created.ok) throw new Error(created.error.message);
-		created.value.step();
-		created.value.step();
-		const events = created.value.step();
+		const runtime = runtimeFrom(source);
+		runtime.step();
+		runtime.step();
+		const events = runtime.step();
 		expect(events.at(-1)).toMatchObject({
 			kind: 'runtime-error',
 			error: { code: 'RUN001' }
 		});
-		expect(created.value.state.status).toBe('failed');
+		expect(runtime.state.status).toBe('failed');
 	});
 
 	it('produce snapshots desacoplados y vuelve al estado inicial con reset', () => {
-		const analysis = analyze(COMPLETE_PROGRAM);
-		if (analysis.program === undefined) throw new Error('El programa de prueba debe ser válido.');
-		const created = createRuntime(analysis.program, {
+		const runtime = runtimeFrom(COMPLETE_PROGRAM, {
 			corners: [{ coordinate: { avenue: 2, street: 3 }, contents: { flowers: 1, papers: 0 } }]
 		});
-		if (!created.ok) throw new Error(created.error.message);
-		const initial = created.value.getSnapshot();
-		created.value.run();
+		const initial = runtime.getSnapshot();
+		runtime.run();
 		expect(initial.robots[0].state.position).toEqual({ avenue: 1, street: 1 });
-		created.value.reset();
-		expect(created.value.getSnapshot()).toMatchObject({
+		runtime.reset();
+		expect(runtime.getSnapshot()).toMatchObject({
 			status: 'ready',
 			stepCount: 0,
 			output: [],
 			pendingMessages: 0
 		});
-		expect(created.value.state.city.get({ avenue: 2, street: 3 }).flowers).toBe(1);
+		expect(runtime.state.city.get({ avenue: 2, street: 3 }).flowers).toBe(1);
 	});
 
 	it('emite un error pedagógico al superar el límite de pasos', () => {
@@ -178,13 +173,10 @@ fin`;
 			'    mientras (n<7)\n      n:=n+1',
 			'    mientras (V)\n      derecha'
 		);
-		const analysis = analyze(source);
-		if (analysis.program === undefined) throw new Error('El programa de prueba debe ser válido.');
-		const created = createRuntime(analysis.program, {
+		const runtime = runtimeFrom(source, {
 			corners: [{ coordinate: { avenue: 2, street: 3 }, contents: { flowers: 1, papers: 0 } }]
 		});
-		if (!created.ok) throw new Error(created.error.message);
-		const result = created.value.run({ maxSteps: 30 });
+		const result = runtime.run({ maxSteps: 30 });
 		expect(result.status).toBe('failed');
 		expect(result.events.at(-1)).toMatchObject({
 			kind: 'runtime-error',
@@ -197,20 +189,17 @@ fin`;
 			'    mientras (n<7)\n      n:=n+1',
 			'    mientras (V)\n      derecha'
 		);
-		const analysis = analyze(source);
-		if (analysis.program === undefined) throw new Error('El programa de prueba debe ser válido.');
-		const created = createRuntime(analysis.program, {}, { maxSteps: 3 });
-		if (!created.ok) throw new Error(created.error.message);
-		created.value.step();
-		created.value.step();
-		created.value.step();
-		expect(created.value.step()).toContainEqual(
+		const runtime = runtimeFrom(source, {}, { maxSteps: 3 });
+		runtime.step();
+		runtime.step();
+		runtime.step();
+		expect(runtime.step()).toContainEqual(
 			expect.objectContaining({
 				kind: 'runtime-error',
 				error: expect.objectContaining({ code: 'RUN020' })
 			})
 		);
-		expect(created.value.state.status).toBe('failed');
+		expect(runtime.state.status).toBe('failed');
 	});
 
 	it('intercala robots CMRE y entrega mensajes aunque el receptor espere primero', () => {
@@ -218,11 +207,8 @@ fin`;
 			new URL('../../../../tests/fixtures/valid/cmre-completo.ri', import.meta.url),
 			'utf8'
 		);
-		const analysis = analyze(source, { profile: CMRE_PROFILE });
-		if (analysis.program === undefined) throw new Error('El fixture CMRE debe ser válido.');
-		const created = createRuntime(analysis.program, { randomSeed: 9 });
-		if (!created.ok) throw new Error(created.error.message);
-		const result = created.value.run();
+		const runtime = runtimeFrom(source, { randomSeed: 9 });
+		const result = runtime.run();
 		expect(result.status).toBe('finished');
 		const sent = result.events.find(({ kind }) => kind === 'message-sent');
 		const received = result.events.find(({ kind }) => kind === 'message-received');
@@ -231,10 +217,10 @@ fin`;
 		if (sent?.kind === 'message-sent' && received?.kind === 'message-received') {
 			expect(received.value).toBe(sent.value);
 		}
-		expect(created.value.state.robots.get('R2')?.environment.snapshot()).toEqual({
+		expect(runtime.state.robots.get('R2')?.environment.snapshot()).toEqual({
 			recibido: received?.kind === 'message-received' ? received.value : 0
 		});
-		expect(created.value.state.locks.size).toBe(0);
+		expect(runtime.state.locks.size).toBe(0);
 	});
 
 	it('detecta espera global entre robots CMRE', () => {
@@ -263,11 +249,8 @@ comenzar
   Iniciar(R1,1,1)
   Iniciar(R2,2,1)
 fin`;
-		const analysis = analyze(source, { profile: CMRE_PROFILE });
-		if (analysis.program === undefined) throw new Error('El programa CMRE debe ser válido.');
-		const created = createRuntime(analysis.program);
-		if (!created.ok) throw new Error(created.error.message);
-		const result = created.value.run();
+		const runtime = runtimeFrom(source);
+		const result = runtime.run();
 		expect(result.status).toBe('failed');
 		expect(result.events.at(-1)).toMatchObject({
 			kind: 'runtime-error',
@@ -302,12 +285,8 @@ comenzar
   AsignarArea(R,ciudad)
   Iniciar(R,1,1)
 fin`;
-		const analysis = analyze(source);
-		if (analysis.program === undefined)
-			throw new Error('El programa de parámetros debe ser válido.');
-		const created = createRuntime(analysis.program);
-		if (!created.ok) throw new Error(created.error.message);
-		expect(created.value.run().status).toBe('finished');
-		expect(created.value.state.output).toEqual([5, 100]);
+		const runtime = runtimeFrom(source);
+		expect(runtime.run().status).toBe('finished');
+		expect(runtime.state.output).toEqual([5, 100]);
 	});
 });

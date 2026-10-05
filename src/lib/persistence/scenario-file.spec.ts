@@ -17,6 +17,28 @@ describe('archivos de escenario', () => {
 		});
 	});
 
+	it('rechaza esquinas malformadas, coordenadas inválidas y cantidades inseguras', () => {
+		for (const corner of [
+			null,
+			{ coordinate: { avenue: 0, street: 1 }, contents: { flowers: 0, papers: 0 } },
+			{ coordinate: { avenue: 1.5, street: 1 }, contents: { flowers: 0, papers: 0 } },
+			{
+				coordinate: { avenue: 1, street: 1 },
+				contents: { flowers: Number.MAX_SAFE_INTEGER + 1, papers: 0 }
+			}
+		]) {
+			expect(
+				parseScenario(
+					JSON.stringify({
+						version: 1,
+						city: { width: 100, height: 100 },
+						corners: [corner]
+					})
+				)
+			).toMatchObject({ ok: false });
+		}
+	});
+
 	it.each([
 		['JSON inválido', '{'],
 		['versión desconocida', '{"version":2,"city":{"width":100,"height":100},"corners":[]}'],

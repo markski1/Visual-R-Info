@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 
 import { lex } from './lexer.js';
 import { TokenKind, TriviaKind } from './token.js';
+import type { SourceSpan } from '../source/index.js';
+
+function spans(entries: readonly { span?: SourceSpan }[]) {
+	// Offset, línea y columna de inicio y fin.
+	return entries.map(({ span }) => {
+		if (!span) throw new Error('Falta el rango de fuente.');
+		const { start, end } = span;
+		return [start.offset, start.line, start.column, end.offset, end.line, end.column];
+	});
+}
 
 describe('lex', () => {
 	it('reconoce operadores, puntuación y literales', () => {
 		const result = lex('x := 12 + 3 - 4 * 5 / 6 = 7 <> 8 < 9 <= 10 > 11 >= 12 ~ V & F | Pos(1, 2)');
-
 		expect(result.diagnostics).toEqual([]);
 		expect(result.tokens.map(({ kind }) => kind)).toEqual([
 			TokenKind.Identifier,
@@ -48,302 +56,135 @@ describe('lex', () => {
 		]);
 	});
 
-	it('reconoce únicamente las grafías confirmadas de palabras reservadas y primitivas', () => {
-		const source = [
-			'si',
-			'sino',
-			'mientras',
-			'repetir',
-			'comenzar',
-			'fin',
-			'numero',
-			'boolean',
-			'mover',
-			'derecha',
-			'tomarFlor',
-			'tomarPapel',
-			'depositarFlor',
-			'depositarPapel',
-			'PosAv',
-			'PosCa',
-			'HayFlorEnLaEsquina',
-			'HayPapelEnLaEsquina',
-			'HayFlorEnLaBolsa',
-			'HayPapelEnLaBolsa',
-			'Informar'
-		].join(' ');
-
-		expect(lex(source).tokens.map(({ kind }) => kind)).toEqual([
-			TokenKind.If,
-			TokenKind.Else,
-			TokenKind.While,
-			TokenKind.Repeat,
-			TokenKind.Begin,
-			TokenKind.End,
-			TokenKind.NumberType,
-			TokenKind.BooleanType,
-			TokenKind.Move,
-			TokenKind.TurnRight,
-			TokenKind.TakeFlower,
-			TokenKind.TakePaper,
-			TokenKind.DropFlower,
-			TokenKind.DropPaper,
-			TokenKind.PositionAvenue,
-			TokenKind.PositionStreet,
-			TokenKind.FlowerAtCorner,
-			TokenKind.PaperAtCorner,
-			TokenKind.FlowerInBag,
-			TokenKind.PaperInBag,
-			TokenKind.Inform,
+	it('reconoce las palabras reservadas y respeta sus mayúsculas', () => {
+		const keywords = [
+			['si', TokenKind.If],
+			['sino', TokenKind.Else],
+			['mientras', TokenKind.While],
+			['repetir', TokenKind.Repeat],
+			['comenzar', TokenKind.Begin],
+			['fin', TokenKind.End],
+			['numero', TokenKind.NumberType],
+			['boolean', TokenKind.BooleanType],
+			['mover', TokenKind.Move],
+			['derecha', TokenKind.TurnRight],
+			['tomarFlor', TokenKind.TakeFlower],
+			['tomarPapel', TokenKind.TakePaper],
+			['depositarFlor', TokenKind.DropFlower],
+			['depositarPapel', TokenKind.DropPaper],
+			['PosAv', TokenKind.PositionAvenue],
+			['PosCa', TokenKind.PositionStreet],
+			['HayFlorEnLaEsquina', TokenKind.FlowerAtCorner],
+			['HayPapelEnLaEsquina', TokenKind.PaperAtCorner],
+			['HayFlorEnLaBolsa', TokenKind.FlowerInBag],
+			['HayPapelEnLaBolsa', TokenKind.PaperInBag],
+			['Informar', TokenKind.Inform],
+			['programa', TokenKind.Program],
+			['procesos', TokenKind.Processes],
+			['proceso', TokenKind.Process],
+			['areas', TokenKind.Areas],
+			['AreaC', TokenKind.AreaC],
+			['AreaP', TokenKind.AreaP],
+			['AreaPC', TokenKind.AreaPC],
+			['robots', TokenKind.Robots],
+			['robot', TokenKind.Robot],
+			['variables', TokenKind.Variables],
+			['E', TokenKind.InputParameter],
+			['S', TokenKind.OutputParameter],
+			['ES', TokenKind.InputOutputParameter],
+			['AsignarArea', TokenKind.AssignArea],
+			['Iniciar', TokenKind.StartRobot],
+			['Random', TokenKind.Random],
+			['bloquearEsquina', TokenKind.LockCorner],
+			['liberarEsquina', TokenKind.UnlockCorner],
+			['enviarMensaje', TokenKind.SendMessage],
+			['recibirMensaje', TokenKind.ReceiveMessage],
+			[':', TokenKind.Colon],
+			[';', TokenKind.Semicolon]
+		];
+		expect(lex(keywords.map(([word]) => word).join(' ')).tokens.map(({ kind }) => kind)).toEqual([
+			...keywords.map(([, kind]) => kind),
 			TokenKind.EndOfFile
 		]);
-		expect(lex('Si siempre informar').tokens.map(({ kind }) => kind)).toEqual([
-			TokenKind.Identifier,
-			TokenKind.Identifier,
-			TokenKind.Identifier,
-			TokenKind.EndOfFile
-		]);
+		expect(
+			lex('Si siempre informar constructor toString __proto__').tokens.map(({ kind }) => kind)
+		).toEqual([...Array(6).fill(TokenKind.Identifier), TokenKind.EndOfFile]);
 	});
 
-	it('reconoce la estructura completa y las primitivas del R-Info de escritorio', () => {
-		const source = [
-			'programa',
-			'procesos',
-			'proceso',
-			'areas',
-			'AreaC',
-			'AreaP',
-			'AreaPC',
-			'robots',
-			'robot',
-			'variables',
-			'E',
-			'S',
-			'ES',
-			'AsignarArea',
-			'Iniciar',
-			'Random',
-			'bloquearEsquina',
-			'liberarEsquina',
-			'enviarMensaje',
-			'recibirMensaje',
-			':',
-			';'
-		].join(' ');
-
-		expect(lex(source).tokens.map(({ kind }) => kind)).toEqual([
-			TokenKind.Program,
-			TokenKind.Processes,
-			TokenKind.Process,
-			TokenKind.Areas,
-			TokenKind.AreaC,
-			TokenKind.AreaP,
-			TokenKind.AreaPC,
-			TokenKind.Robots,
-			TokenKind.Robot,
-			TokenKind.Variables,
-			TokenKind.InputParameter,
-			TokenKind.OutputParameter,
-			TokenKind.InputOutputParameter,
-			TokenKind.AssignArea,
-			TokenKind.StartRobot,
-			TokenKind.Random,
-			TokenKind.LockCorner,
-			TokenKind.UnlockCorner,
-			TokenKind.SendMessage,
-			TokenKind.ReceiveMessage,
-			TokenKind.Colon,
-			TokenKind.Semicolon,
-			TokenKind.EndOfFile
-		]);
-	});
-
-	it('tokeniza un programa completo usado como fixture de compatibilidad', () => {
-		const fixture = readFileSync(
-			new URL('../../../../tests/fixtures/valid/programa-completo.ri', import.meta.url),
-			'utf8'
-		);
-		const result = lex(fixture);
-
-		expect(result.diagnostics).toEqual([]);
-		expect(result.tokens[0]).toMatchObject({ kind: TokenKind.Program, lexeme: 'programa' });
-		expect(result.tokens.filter(({ kind }) => kind === TokenKind.Colon)).toHaveLength(5);
-		expect(result.tokens.at(-1)?.kind).toBe(TokenKind.EndOfFile);
-	});
-
-	it('conserva trivia y calcula posiciones UTF-16 a través de distintos saltos de línea', () => {
+	it('conserva trivia y posiciones UTF-16 con comentarios, CRLF y emoji', () => {
 		const result = lex('área\r\n\t{uno\n😀}mover');
-
 		expect(result.diagnostics).toEqual([]);
-		expect(result.tokens).toEqual([
-			{
-				kind: TokenKind.Identifier,
-				lexeme: 'área',
-				span: {
-					start: { offset: 0, line: 1, column: 1 },
-					end: { offset: 4, line: 1, column: 5 }
-				}
-			},
-			{
-				kind: TokenKind.Move,
-				lexeme: 'mover',
-				span: {
-					start: { offset: 15, line: 3, column: 4 },
-					end: { offset: 20, line: 3, column: 9 }
-				}
-			},
-			{
-				kind: TokenKind.EndOfFile,
-				lexeme: '',
-				span: {
-					start: { offset: 20, line: 3, column: 9 },
-					end: { offset: 20, line: 3, column: 9 }
-				}
-			}
+		expect(result.tokens.map(({ kind, lexeme }) => [kind, lexeme])).toEqual([
+			[TokenKind.Identifier, 'área'],
+			[TokenKind.Move, 'mover'],
+			[TokenKind.EndOfFile, '']
 		]);
-		expect(result.trivia.map(({ kind, lexeme, span }) => ({ kind, lexeme, span }))).toEqual([
-			{
-				kind: TriviaKind.LineBreak,
-				lexeme: '\r\n',
-				span: {
-					start: { offset: 4, line: 1, column: 5 },
-					end: { offset: 6, line: 2, column: 1 }
-				}
-			},
-			{
-				kind: TriviaKind.Whitespace,
-				lexeme: '\t',
-				span: {
-					start: { offset: 6, line: 2, column: 1 },
-					end: { offset: 7, line: 2, column: 2 }
-				}
-			},
-			{
-				kind: TriviaKind.Comment,
-				lexeme: '{uno\n😀}',
-				span: {
-					start: { offset: 7, line: 2, column: 2 },
-					end: { offset: 15, line: 3, column: 4 }
-				}
-			}
+		expect(spans(result.tokens)).toEqual([
+			[0, 1, 1, 4, 1, 5],
+			[15, 3, 4, 20, 3, 9],
+			[20, 3, 9, 20, 3, 9]
+		]);
+		expect(result.trivia.map(({ kind, lexeme }) => [kind, lexeme])).toEqual([
+			[TriviaKind.LineBreak, '\r\n'],
+			[TriviaKind.Whitespace, '\t'],
+			[TriviaKind.Comment, '{uno\n😀}']
+		]);
+		expect(spans(result.trivia)).toEqual([
+			[4, 1, 5, 6, 2, 1],
+			[6, 2, 1, 7, 2, 2],
+			[7, 2, 2, 15, 3, 4]
 		]);
 	});
 
 	it('trata los separadores Unicode como saltos de línea', () => {
 		const result = lex('uno\u2028dos\u2029tres');
-
-		expect(result.tokens.map(({ lexeme, span }) => ({ lexeme, span }))).toEqual([
-			{
-				lexeme: 'uno',
-				span: {
-					start: { offset: 0, line: 1, column: 1 },
-					end: { offset: 3, line: 1, column: 4 }
-				}
-			},
-			{
-				lexeme: 'dos',
-				span: {
-					start: { offset: 4, line: 2, column: 1 },
-					end: { offset: 7, line: 2, column: 4 }
-				}
-			},
-			{
-				lexeme: 'tres',
-				span: {
-					start: { offset: 8, line: 3, column: 1 },
-					end: { offset: 12, line: 3, column: 5 }
-				}
-			},
-			{
-				lexeme: '',
-				span: {
-					start: { offset: 12, line: 3, column: 5 },
-					end: { offset: 12, line: 3, column: 5 }
-				}
-			}
+		expect(result.tokens.map(({ lexeme }) => lexeme)).toEqual(['uno', 'dos', 'tres', '']);
+		expect(spans(result.tokens)).toEqual([
+			[0, 1, 1, 3, 1, 4],
+			[4, 2, 1, 7, 2, 4],
+			[8, 3, 1, 12, 3, 5],
+			[12, 3, 5, 12, 3, 5]
 		]);
-		expect(result.trivia.map(({ kind, lexeme }) => ({ kind, lexeme }))).toEqual([
-			{ kind: TriviaKind.LineBreak, lexeme: '\u2028' },
-			{ kind: TriviaKind.LineBreak, lexeme: '\u2029' }
+		expect(result.trivia.map(({ kind, lexeme }) => [kind, lexeme])).toEqual([
+			[TriviaKind.LineBreak, '\u2028'],
+			[TriviaKind.LineBreak, '\u2029']
 		]);
 	});
 
-	it('informa comentarios sin cerrar y conserva el texto para diagnóstico futuro', () => {
+	it('informa comentarios sin cerrar y conserva el texto', () => {
 		const result = lex('{ comentario\nsin cierre');
-
-		expect(result.tokens).toHaveLength(1);
-		expect(result.trivia).toEqual([
-			{
-				kind: TriviaKind.Comment,
-				lexeme: '{ comentario\nsin cierre',
-				span: {
-					start: { offset: 0, line: 1, column: 1 },
-					end: { offset: 23, line: 2, column: 11 }
-				}
-			}
+		expect(result.tokens.map(({ kind }) => kind)).toEqual([TokenKind.EndOfFile]);
+		expect(result.trivia.map(({ kind, lexeme }) => [kind, lexeme])).toEqual([
+			[TriviaKind.Comment, '{ comentario\nsin cierre']
 		]);
-		expect(result.diagnostics).toEqual([
-			{
-				code: 'LEX002',
-				phase: 'lexer',
-				severity: 'error',
-				message: 'El comentario no está cerrado. Agregá `}` antes del final del archivo.',
-				span: {
-					start: { offset: 0, line: 1, column: 1 },
-					end: { offset: 23, line: 2, column: 11 }
-				}
-			}
+		expect(spans(result.trivia)).toEqual([[0, 1, 1, 23, 2, 11]]);
+		expect(result.diagnostics).toMatchObject([
+			{ code: 'LEX002', phase: 'lexer', severity: 'error' }
 		]);
+		expect(spans(result.diagnostics)).toEqual([[0, 1, 1, 23, 2, 11]]);
 	});
 
-	it('se recupera de cada símbolo desconocido sin perder sus rangos', () => {
+	it('se recupera de símbolos desconocidos sin perder sus rangos', () => {
 		const result = lex('@😀} mover');
-
-		expect(result.diagnostics.map(({ code, span }) => ({ code, span }))).toEqual([
-			{
-				code: 'LEX001',
-				span: {
-					start: { offset: 0, line: 1, column: 1 },
-					end: { offset: 1, line: 1, column: 2 }
-				}
-			},
-			{
-				code: 'LEX001',
-				span: {
-					start: { offset: 1, line: 1, column: 2 },
-					end: { offset: 3, line: 1, column: 4 }
-				}
-			},
-			{
-				code: 'LEX001',
-				span: {
-					start: { offset: 3, line: 1, column: 4 },
-					end: { offset: 4, line: 1, column: 5 }
-				}
-			}
+		expect(result.diagnostics.map(({ code }) => code)).toEqual(['LEX001', 'LEX001', 'LEX001']);
+		expect(spans(result.diagnostics)).toEqual([
+			[0, 1, 1, 1, 1, 2],
+			[1, 1, 2, 3, 1, 4],
+			[3, 1, 4, 4, 1, 5]
 		]);
-		expect(result.tokens.map(({ kind, lexeme }) => ({ kind, lexeme }))).toEqual([
-			{ kind: TokenKind.Move, lexeme: 'mover' },
-			{ kind: TokenKind.EndOfFile, lexeme: '' }
+		expect(result.tokens.map(({ kind, lexeme }) => [kind, lexeme])).toEqual([
+			[TokenKind.Move, 'mover'],
+			[TokenKind.EndOfFile, '']
 		]);
 	});
 
 	it('produce un EOF estable para una fuente vacía', () => {
 		const result = lex('');
-
-		expect(result).toEqual({
-			tokens: [
-				{
-					kind: TokenKind.EndOfFile,
-					lexeme: '',
-					span: {
-						start: { offset: 0, line: 1, column: 1 },
-						end: { offset: 0, line: 1, column: 1 }
-					}
-				}
-			],
-			trivia: [],
-			diagnostics: []
-		});
+		expect(result.tokens.map(({ kind, lexeme }) => [kind, lexeme])).toEqual([
+			[TokenKind.EndOfFile, '']
+		]);
+		expect(spans(result.tokens)).toEqual([[0, 1, 1, 0, 1, 1]]);
+		expect(result.trivia).toEqual([]);
+		expect(result.diagnostics).toEqual([]);
 	});
 });

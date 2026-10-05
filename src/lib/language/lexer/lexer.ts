@@ -206,7 +206,7 @@ class Lexer {
 				code: 'LEX001',
 				phase: 'lexer',
 				severity: 'error',
-				message: `El símbolo \`${lexeme}\` no pertenece a rinfo-core-v1.`,
+				message: `El símbolo \`${lexeme}\` no pertenece a R-Info.`,
 				span: this.spanFrom(start)
 			});
 			return;

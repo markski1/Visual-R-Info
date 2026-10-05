@@ -19,7 +19,6 @@ export type RobotSensor =
 	| 'HayPapelEnLaBolsa';
 
 export interface IntegerLiteralExpression extends BaseNode<'IntegerLiteralExpression'> {
-	/** Se conserva el texto hasta que NumericSemantics defina rango y overflow. */
 	readonly raw: string;
 }
 

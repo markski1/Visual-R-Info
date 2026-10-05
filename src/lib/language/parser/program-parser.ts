@@ -6,6 +6,7 @@ import {
 	type BlockStatement,
 	type CallStatement,
 	type ErrorStatement,
+	type Expression,
 	type IdentifierBinding,
 	type IfStatement,
 	type ParameterDeclaration,
@@ -72,9 +73,9 @@ class ProgramParser {
 		const variables = this.parseVariablesSection(true);
 		const { statements: body, end } = this.parseRequiredBlock('principal');
 
-		while (!this.cursor.isAt(TokenKind.EndOfFile)) {
-			const token = this.cursor.advanceToken();
-			this.cursor.addDiagnostic(
+		while (!this.cursor.at(TokenKind.EndOfFile)) {
+			const token = this.cursor.advance();
+			this.cursor.report(
 				token,
 				`No se esperaba \`${token.lexeme}\` después del final del programa.`
 			);
@@ -100,14 +101,14 @@ class ProgramParser {
 		const declarations: ProcessDeclaration[] = [];
 		if (!this.consume(TokenKind.Processes)) return declarations;
 
-		while (this.cursor.isAt(TokenKind.Process)) {
+		while (this.cursor.at(TokenKind.Process)) {
 			declarations.push(this.parseProcessDeclaration());
 		}
 		return declarations;
 	}
 
 	private parseProcessDeclaration(): ProcessDeclaration {
-		const start = this.cursor.advanceToken();
+		const start = this.cursor.advance();
 		const name = this.parseBinding('Falta el nombre del proceso.');
 		const parameters = this.parseParameters();
 		const variables = this.parseVariablesSection(false);
@@ -128,15 +129,12 @@ class ProgramParser {
 		const parameters: ParameterDeclaration[] = [];
 		if (!this.consume(TokenKind.LeftParenthesis)) return parameters;
 
-		while (
-			!this.cursor.isAt(TokenKind.RightParenthesis) &&
-			!this.cursor.isAt(TokenKind.EndOfFile)
-		) {
-			const start = this.cursor.getCurrentToken();
+		while (!this.cursor.at(TokenKind.RightParenthesis) && !this.cursor.at(TokenKind.EndOfFile)) {
+			const start = this.cursor.current();
 			const mode = this.parseParameterMode();
 			const name = this.parseBinding('Falta el nombre del parámetro.');
 			this.expect(TokenKind.Colon, 'Falta `:` entre el parámetro y su tipo.');
-			const typeToken = this.cursor.getCurrentToken();
+			const typeToken = this.cursor.current();
 			const typeName = this.parsePrimitiveType();
 			const span = spanBetween(
 				start.span.start,
@@ -164,7 +162,7 @@ class ProgramParser {
 		const declarations: AreaDeclaration[] = [];
 		this.expect(TokenKind.Areas, 'Falta la sección `areas`.');
 
-		while (this.cursor.isAt(TokenKind.Identifier)) {
+		while (this.cursor.at(TokenKind.Identifier)) {
 			declarations.push(this.parseAreaDeclaration());
 		}
 		return declarations;
@@ -173,7 +171,7 @@ class ProgramParser {
 	private parseAreaDeclaration(): AreaDeclaration {
 		const name = this.parseBinding('Falta el nombre del área.');
 		this.expect(TokenKind.Colon, 'Falta `:` entre el área y su tipo.');
-		const areaToken = this.cursor.getCurrentToken();
+		const areaToken = this.cursor.current();
 		let areaType: AreaType = 'AreaC';
 		if (
 			areaToken.kind === TokenKind.AreaC ||
@@ -181,12 +179,9 @@ class ProgramParser {
 			areaToken.kind === TokenKind.AreaPC
 		) {
 			areaType = areaToken.lexeme as AreaType;
-			this.cursor.advanceToken();
+			this.cursor.advance();
 		} else {
-			this.cursor.addDiagnostic(
-				areaToken,
-				'Se esperaba un tipo de área: `AreaC`, `AreaP` o `AreaPC`.'
-			);
+			this.cursor.report(areaToken, 'Se esperaba un tipo de área: `AreaC`, `AreaP` o `AreaPC`.');
 		}
 		const { arguments: args, end } = this.parseArguments();
 		const span = spanBetween(name.span.start, end);
@@ -204,12 +199,12 @@ class ProgramParser {
 		const declarations: RobotDeclaration[] = [];
 		this.expect(TokenKind.Robots, 'Falta la sección `robots`.');
 
-		while (this.cursor.isAt(TokenKind.Robot)) {
+		while (this.cursor.at(TokenKind.Robot)) {
 			declarations.push(this.parseRobotDeclaration());
 		}
 		if (declarations.length === 0) {
-			this.cursor.addDiagnostic(
-				this.cursor.getCurrentToken(),
+			this.cursor.report(
+				this.cursor.current(),
 				'La sección `robots` debe declarar al menos un tipo de robot.'
 			);
 		}
@@ -217,7 +212,7 @@ class ProgramParser {
 	}
 
 	private parseRobotDeclaration(): RobotDeclaration {
-		const start = this.cursor.advanceToken();
+		const start = this.cursor.advance();
 		const name = this.parseBinding('Falta el nombre del tipo de robot.');
 		const variables = this.parseVariablesSection(false);
 		const { statements: body, end } = this.parseRequiredBlock(`del robot \`${name.name}\``);
@@ -236,25 +231,25 @@ class ProgramParser {
 		const declarations: VariableDeclaration[] = [];
 		if (!this.consume(TokenKind.Variables)) {
 			if (required) {
-				this.cursor.addDiagnostic(this.cursor.getCurrentToken(), 'Falta la sección `variables`.');
+				this.cursor.report(this.cursor.current(), 'Falta la sección `variables`.');
 			}
 			return declarations;
 		}
 
-		while (this.cursor.isAt(TokenKind.Identifier)) {
+		while (this.cursor.at(TokenKind.Identifier)) {
 			declarations.push(this.parseVariableDeclaration());
 		}
 		return declarations;
 	}
 
 	private parseVariableDeclaration(): VariableDeclaration {
-		const start = this.cursor.getCurrentToken();
+		const start = this.cursor.current();
 		const names: IdentifierBinding[] = [this.parseBinding('Falta el nombre de la variable.')];
 		while (this.consume(TokenKind.Comma)) {
 			names.push(this.parseBinding('Falta un nombre después de `,`.'));
 		}
 		this.expect(TokenKind.Colon, 'Falta `:` entre la variable y su tipo.');
-		const typeToken = this.cursor.getCurrentToken();
+		const typeToken = this.cursor.current();
 		const typeName = this.parseTypeName();
 		const span = spanBetween(start.span.start, typeToken.span.end);
 		return {
@@ -268,7 +263,7 @@ class ProgramParser {
 
 	private parseRequiredBlock(context: string): { statements: Statement[]; end: SourcePosition } {
 		this.expect(TokenKind.Begin, `Falta \`comenzar\` antes del cuerpo ${context}.`);
-		const statements = this.parseStatementsUntil(new Set([TokenKind.End]));
+		const statements = this.parseBlockStatements();
 		const endToken = this.expect(
 			TokenKind.End,
 			`Falta \`fin\` para cerrar el cuerpo ${context}.`,
@@ -277,22 +272,19 @@ class ProgramParser {
 		return { statements, end: endToken.span.end };
 	}
 
-	private parseStatementsUntil(stops: ReadonlySet<TokenKindType>): Statement[] {
+	private parseBlockStatements(): Statement[] {
 		const statements: Statement[] = [];
-		while (
-			!stops.has(this.cursor.getCurrentToken().kind) &&
-			!this.cursor.isAt(TokenKind.EndOfFile)
-		) {
+		while (!this.cursor.at(TokenKind.End) && !this.cursor.at(TokenKind.EndOfFile)) {
 			statements.push(this.parseStatement());
 		}
 		return statements;
 	}
 
 	private parseStatement(): Statement {
-		const token = this.cursor.getCurrentToken();
+		const token = this.cursor.current();
 		const command = ROBOT_COMMANDS[token.kind];
 		if (command !== undefined) {
-			this.cursor.advanceToken();
+			this.cursor.advance();
 			return this.commandNode(token, command);
 		}
 
@@ -303,13 +295,13 @@ class ProgramParser {
 		if (token.kind === TokenKind.Repeat) return this.parseRepeatStatement();
 		if (token.kind === TokenKind.Begin) return this.parseExplicitBlock();
 
-		this.cursor.addDiagnostic(token, `No se reconoce \`${token.lexeme}\` como una instrucción.`);
-		this.cursor.advanceToken();
+		this.cursor.report(token, `No se reconoce \`${token.lexeme}\` como una instrucción.`);
+		this.cursor.advance();
 		return this.errorStatement(token.span);
 	}
 
 	private parseIdentifierStatement(): Statement {
-		const nameToken = this.cursor.advanceToken();
+		const nameToken = this.cursor.advance();
 		const binding = bindingFrom(nameToken);
 		if (this.consume(TokenKind.Assign)) {
 			const value = this.cursor.parseExpression();
@@ -323,25 +315,25 @@ class ProgramParser {
 			} satisfies AssignmentStatement;
 		}
 
-		const { arguments: args, end } = this.cursor.isAt(TokenKind.LeftParenthesis)
+		const { arguments: args, end } = this.cursor.at(TokenKind.LeftParenthesis)
 			? this.parseArguments()
 			: { arguments: [], end: nameToken.span.end };
 		return this.callNode(binding, args, end);
 	}
 
 	private parseCallStatement(): CallStatement {
-		const callee = bindingFrom(this.cursor.advanceToken());
+		const callee = bindingFrom(this.cursor.advance());
 		const { arguments: args, end } = this.parseArguments();
 		return this.callNode(callee, args, end);
 	}
 
 	private parseArguments(): {
-		arguments: import('../ast/index.js').Expression[];
+		arguments: Expression[];
 		end: SourcePosition;
 	} {
-		const args: import('../ast/index.js').Expression[] = [];
+		const args: Expression[] = [];
 		const opening = this.expect(TokenKind.LeftParenthesis, 'Falta `(` al comenzar los argumentos.');
-		if (!this.cursor.isAt(TokenKind.RightParenthesis)) {
+		if (!this.cursor.at(TokenKind.RightParenthesis)) {
 			do {
 				args.push(this.cursor.parseExpression());
 			} while (this.consume(TokenKind.Comma));
@@ -357,12 +349,12 @@ class ProgramParser {
 	}
 
 	private parseIfStatement(): IfStatement {
-		const start = this.cursor.advanceToken();
+		const start = this.cursor.advance();
 		const condition = this.cursor.parseExpression();
 		const thenBranch = this.parseIndentedBody(start, '`si`');
 		let elseBranch: Statement[] | undefined;
-		if (this.cursor.isAt(TokenKind.Else)) {
-			const elseToken = this.cursor.advanceToken();
+		if (this.cursor.at(TokenKind.Else)) {
+			const elseToken = this.cursor.advance();
 			elseBranch = this.parseIndentedBody(elseToken, '`sino`');
 		}
 		const end = branchEnd(elseBranch ?? thenBranch, condition.span.end);
@@ -378,7 +370,7 @@ class ProgramParser {
 	}
 
 	private parseWhileStatement(): WhileStatement {
-		const start = this.cursor.advanceToken();
+		const start = this.cursor.advance();
 		const condition = this.cursor.parseExpression();
 		const body = this.parseIndentedBody(start, '`mientras`');
 		const span = spanBetween(start.span.start, branchEnd(body, condition.span.end));
@@ -392,7 +384,7 @@ class ProgramParser {
 	}
 
 	private parseRepeatStatement(): RepeatStatement {
-		const start = this.cursor.advanceToken();
+		const start = this.cursor.advance();
 		const count = this.cursor.parseExpression();
 		const body = this.parseIndentedBody(start, '`repetir`');
 		const span = spanBetween(start.span.start, branchEnd(body, count.span.end));
@@ -406,23 +398,23 @@ class ProgramParser {
 	}
 
 	private parseIndentedBody(owner: Token, label: string): Statement[] {
-		if (this.cursor.isAt(TokenKind.Begin)) return [this.parseExplicitBlock()];
-		const first = this.cursor.getCurrentToken();
+		if (this.cursor.at(TokenKind.Begin)) return [this.parseExplicitBlock()];
+		const first = this.cursor.current();
 		if (
 			first.kind === TokenKind.EndOfFile ||
 			first.span.start.line <= owner.span.start.line ||
 			first.span.start.column <= owner.span.start.column
 		) {
-			this.cursor.addDiagnostic(first, `Falta una instrucción indentada después de ${label}.`);
+			this.cursor.report(first, `Falta una instrucción indentada después de ${label}.`);
 			return [];
 		}
 
 		const statements: Statement[] = [];
 		while (
-			!this.cursor.isAt(TokenKind.EndOfFile) &&
-			!this.cursor.isAt(TokenKind.End) &&
-			!this.cursor.isAt(TokenKind.Else) &&
-			this.cursor.getCurrentToken().span.start.column > owner.span.start.column
+			!this.cursor.at(TokenKind.EndOfFile) &&
+			!this.cursor.at(TokenKind.End) &&
+			!this.cursor.at(TokenKind.Else) &&
+			this.cursor.current().span.start.column > owner.span.start.column
 		) {
 			statements.push(this.parseStatement());
 		}
@@ -430,8 +422,8 @@ class ProgramParser {
 	}
 
 	private parseExplicitBlock(): BlockStatement {
-		const start = this.cursor.advanceToken();
-		const statements = this.parseStatementsUntil(new Set([TokenKind.End]));
+		const start = this.cursor.advance();
+		const statements = this.parseBlockStatements();
 		const end = this.expect(TokenKind.End, 'Falta `fin` para cerrar el bloque.', 'PAR002');
 		const span = spanBetween(start.span.start, end.span.end);
 		return {
@@ -448,57 +440,57 @@ class ProgramParser {
 	}
 
 	private parseParameterMode(): ParameterMode {
-		const token = this.cursor.getCurrentToken();
+		const token = this.cursor.current();
 		if (token.kind === TokenKind.InputParameter) {
-			this.cursor.advanceToken();
+			this.cursor.advance();
 			return 'E';
 		}
 		if (token.kind === TokenKind.OutputParameter) {
-			this.cursor.advanceToken();
+			this.cursor.advance();
 			return 'S';
 		}
 		if (token.kind === TokenKind.InputOutputParameter) {
-			this.cursor.advanceToken();
+			this.cursor.advance();
 			return 'ES';
 		}
-		this.cursor.addDiagnostic(token, 'Se esperaba el modo `E`, `S` o `ES` del parámetro.');
+		this.cursor.report(token, 'Se esperaba el modo `E`, `S` o `ES` del parámetro.');
 		return 'E';
 	}
 
 	private parsePrimitiveType(): 'numero' | 'boolean' {
-		const token = this.cursor.getCurrentToken();
+		const token = this.cursor.current();
 		if (token.kind === TokenKind.NumberType || token.kind === TokenKind.BooleanType) {
-			this.cursor.advanceToken();
+			this.cursor.advance();
 			return token.lexeme as 'numero' | 'boolean';
 		}
-		this.cursor.addDiagnostic(token, 'Se esperaba el tipo `numero` o `boolean`.');
+		this.cursor.report(token, 'Se esperaba el tipo `numero` o `boolean`.');
 		return 'numero';
 	}
 
 	private parseTypeName(): string {
-		const token = this.cursor.getCurrentToken();
+		const token = this.cursor.current();
 		if (
 			token.kind === TokenKind.NumberType ||
 			token.kind === TokenKind.BooleanType ||
 			token.kind === TokenKind.Identifier
 		) {
-			this.cursor.advanceToken();
+			this.cursor.advance();
 			return token.lexeme;
 		}
-		this.cursor.addDiagnostic(token, 'Falta un tipo después de `:`.');
+		this.cursor.report(token, 'Falta un tipo después de `:`.');
 		return '<error>';
 	}
 
 	private expect(kind: TokenKindType, message: string, code = 'PAR001'): Token {
-		const token = this.cursor.getCurrentToken();
-		if (token.kind === kind) return this.cursor.advanceToken();
-		this.cursor.addDiagnostic(token, message, code);
+		const token = this.cursor.current();
+		if (token.kind === kind) return this.cursor.advance();
+		this.cursor.report(token, message, code);
 		return { kind, lexeme: '', span: { start: token.span.start, end: token.span.start } };
 	}
 
 	private consume(kind: TokenKindType): boolean {
-		if (!this.cursor.isAt(kind)) return false;
-		this.cursor.advanceToken();
+		if (!this.cursor.at(kind)) return false;
+		this.cursor.advance();
 		return true;
 	}
 
@@ -513,7 +505,7 @@ class ProgramParser {
 
 	private callNode(
 		callee: IdentifierBinding,
-		args: import('../ast/index.js').Expression[],
+		args: Expression[],
 		end: SourcePosition
 	): CallStatement {
 		const span = spanBetween(callee.span.start, end);

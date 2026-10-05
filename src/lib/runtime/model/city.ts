@@ -72,7 +72,7 @@ export class City {
 
 	public clone(): City {
 		const copy = new City();
-		for (const [coordinate, contents] of this.entries()) copy.set(coordinate, contents);
+		for (const [key, contents] of this.corners) copy.corners.set(key, { ...contents });
 		return copy;
 	}
 }

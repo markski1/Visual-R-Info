@@ -31,7 +31,6 @@ src/lib/
     semantics/   ámbitos, símbolos y tipos
     analysis/    orquestación del análisis
     diagnostics/ diagnósticos estables por fase
-    profiles/    perfiles rinfo-core-v1 y cmre-v1
   runtime/
     model/       ciudad, coordenadas, áreas, robots y escenarios
     loader/      bloque principal -> escenario inicial
@@ -83,7 +82,7 @@ El análisis semántico vive en [`src/lib/language/semantics/semantic-analyzer.t
 - aridad y tipos de primitivas, procesos y parámetros `E`, `S` y `ES`.
 - referencias correctas en `AsignarArea`, `Iniciar`, mensajería y CMRE.
 
-Primero se registran las declaraciones globales y luego se analizan las instrucciones. Esto permite usar procesos y tipos de robot definidos en otra parte del archivo. La salida incluye una tabla de símbolos y diagnósticos `SEMxxx` en español.
+Primero se registran las declaraciones globales y luego se analizan las instrucciones. Esto permite usar procesos y tipos de robot definidos en otra parte del archivo. Los ámbitos se usan durante el análisis para producir diagnósticos `SEMxxx` en español.
 
 ## 4. Programa validado y diagnóstico
 

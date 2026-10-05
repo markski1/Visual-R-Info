@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { CMRE_PROFILE } from '../profiles/index.js';
 import { analyze } from './analyze.js';
 
 describe('analyze', () => {
@@ -15,9 +14,6 @@ describe('analyze', () => {
 		expect(result.diagnostics).toEqual([]);
 		expect(result.program).toBeDefined();
 		expect(result.program?.ast.name.name).toBe('ejemploCompleto');
-		expect(result.program?.symbols.symbols.map(({ name }) => name)).toEqual(
-			expect.arrayContaining(['girar', 'ciudad', 'robot1', 'Rinfo', 'cantidad', 'veces', 'flores'])
-		);
 	});
 
 	it('acepta selección, alternativa, repetición y bloques explícitos', () => {
@@ -40,11 +36,10 @@ describe('analyze', () => {
 			new URL('../../../../tests/fixtures/valid/cmre-completo.ri', import.meta.url),
 			'utf8'
 		);
-		const result = analyze(source, { profile: CMRE_PROFILE });
+		const result = analyze(source);
 
 		expect(result.diagnostics).toEqual([]);
 		expect(result.program).toBeDefined();
-		expect(result.program?.profile).toBe(CMRE_PROFILE);
 		expect(result.ast.robots).toHaveLength(2);
 		expect(
 			result.ast.robots.flatMap(({ body }) =>
@@ -129,6 +124,18 @@ fin`;
 				})
 			])
 		);
+	});
+
+	it('rechaza operandos incompatibles en operaciones aritméticas y lógicas', () => {
+		const source = readFileSync(
+			new URL('../../../../tests/fixtures/valid/programa-completo.ri', import.meta.url),
+			'utf8'
+		);
+		for (const expression of ['V+1', '1+F', 'V & 1', '1 | F']) {
+			const result = analyze(source.replace('flores:=0', `Informar(${expression})`));
+			expect(result.program).toBeUndefined();
+			expect(result.diagnostics.map(({ code }) => code)).toEqual(['SEM003']);
+		}
 	});
 
 	it('no ejecuta semántica cuando la estructura sintáctica está rota', () => {

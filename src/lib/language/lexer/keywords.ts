@@ -1,6 +1,6 @@
 import { TokenKind, type TokenKind as TokenKindType } from './token.js';
 
-const KEYWORDS: Readonly<Record<string, TokenKindType>> = {
+export const KEYWORDS: Readonly<Record<string, TokenKindType>> = {
 	programa: TokenKind.Program,
 	procesos: TokenKind.Processes,
 	proceso: TokenKind.Process,
@@ -49,5 +49,5 @@ const KEYWORDS: Readonly<Record<string, TokenKindType>> = {
 };
 
 export function keywordKind(lexeme: string): TokenKindType | undefined {
-	return KEYWORDS[lexeme];
+	return Object.hasOwn(KEYWORDS, lexeme) ? KEYWORDS[lexeme] : undefined;
 }

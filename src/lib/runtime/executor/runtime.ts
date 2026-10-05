@@ -1,13 +1,12 @@
-import type { ValidatedProgram } from '../../language/analysis/index.js';
+import type { ValidatedProgram } from '../../language/analysis/analyze.js';
 import type {
 	CallStatement,
 	ProcessDeclaration,
 	RobotCommand,
-	Statement,
-	VariableDeclaration
+	Statement
 } from '../../language/ast/index.js';
-import { evaluateExpression } from '../evaluator/index.js';
-import { loadProgramScenario, type ScenarioSettings } from '../loader/index.js';
+import { evaluateExpression } from '../evaluator/expression-evaluator.js';
+import { loadProgramScenario, type ScenarioSettings } from '../loader/program-loader.js';
 import {
 	areaContains,
 	createCoordinate,
@@ -22,6 +21,8 @@ import {
 } from '../model/index.js';
 import {
 	createExecutionState,
+	blockFrame,
+	declareVariables,
 	Environment,
 	type BlockFrame,
 	type ExecutionFrame,
@@ -30,10 +31,6 @@ import {
 	type RuntimeValue
 } from '../state/index.js';
 import type { RuntimeEvent } from './events.js';
-
-export interface RunOptions {
-	readonly maxSteps?: number;
-}
 
 export interface RuntimeOptions {
 	readonly maxSteps?: number;
@@ -154,7 +151,7 @@ export class RInfoRuntime {
 		}
 	}
 
-	public run(options: RunOptions = {}): RunResult {
+	public run(options: RuntimeOptions = {}): RunResult {
 		const maxSteps = options.maxSteps ?? this.maxSteps;
 		const events: RuntimeEvent[] = [];
 		while (this.state.status !== 'finished' && this.state.status !== 'failed') {
@@ -665,21 +662,6 @@ export class RInfoRuntime {
 	private randomInteger(minimum: number, maximum: number): number {
 		this.state.randomSeed = (Math.imul(this.state.randomSeed, 1_664_525) + 1_013_904_223) >>> 0;
 		return minimum + (this.state.randomSeed % (maximum - minimum + 1));
-	}
-}
-
-function blockFrame(statements: BlockFrame['statements'], environment: Environment): BlockFrame {
-	return { kind: 'block', statements, environment, nextStatement: 0 };
-}
-
-function declareVariables(
-	environment: Environment,
-	declarations: readonly VariableDeclaration[]
-): void {
-	for (const declaration of declarations) {
-		if (declaration.typeName !== 'numero' && declaration.typeName !== 'boolean') continue;
-		const value: RuntimeValue = declaration.typeName === 'numero' ? 0 : false;
-		for (const binding of declaration.names) environment.declare(binding.name, value);
 	}
 }
 

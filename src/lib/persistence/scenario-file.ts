@@ -19,10 +19,7 @@ export function serializeScenario(corners: readonly ScenarioCorner[]): string {
 	const scenario: ScenarioFile = {
 		version: SCENARIO_FILE_VERSION,
 		city: { width: 100, height: 100 },
-		corners: corners.map((corner) => ({
-			coordinate: { ...corner.coordinate },
-			contents: { ...corner.contents }
-		}))
+		corners
 	};
 	return `${JSON.stringify(scenario, undefined, 2)}\n`;
 }

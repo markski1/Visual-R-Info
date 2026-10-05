@@ -22,6 +22,7 @@
 
 	import type { Diagnostic } from '$lib/language/diagnostics/index.js';
 	import { lex, TokenKind } from '$lib/language/lexer/index.js';
+	import { KEYWORDS } from '$lib/language/lexer/keywords.js';
 	import type { SourceSpan } from '$lib/language/source/index.js';
 
 	let {
@@ -139,47 +140,9 @@
 		{ decorations: (plugin) => plugin.decorations }
 	);
 
-	const completions = [
-		'programa',
-		'procesos',
-		'proceso',
-		'areas',
-		'robots',
-		'robot',
-		'variables',
-		'comenzar',
-		'fin',
-		'si',
-		'sino',
-		'mientras',
-		'repetir',
-		'numero',
-		'boolean',
-		'mover',
-		'derecha',
-		'tomarFlor',
-		'tomarPapel',
-		'depositarFlor',
-		'depositarPapel',
-		'HayFlorEnLaEsquina',
-		'HayPapelEnLaEsquina',
-		'HayFlorEnLaBolsa',
-		'HayPapelEnLaBolsa',
-		'PosAv',
-		'PosCa',
-		'Pos',
-		'Random',
-		'Informar',
-		'AsignarArea',
-		'Iniciar',
-		'AreaC',
-		'AreaP',
-		'AreaPC',
-		'bloquearEsquina',
-		'liberarEsquina',
-		'enviarMensaje',
-		'recibirMensaje'
-	].map((label) => ({ label, type: /^[A-Z]/.test(label) ? 'function' : 'keyword' }));
+	const completions = Object.keys(KEYWORDS)
+		.filter((label) => !['E', 'S', 'ES', 'V', 'F'].includes(label))
+		.map((label) => ({ label, type: /^[A-Z]/.test(label) ? 'function' : 'keyword' }));
 
 	const functionDocumentation: Readonly<Record<string, string>> = {
 		mover: 'Avanza una esquina en la orientación actual del robot.',
@@ -208,33 +171,6 @@
 		recibirMensaje: 'Recibe un valor enviado por otro robot; espera si todavía no llegó.'
 	};
 
-	const booleanKinds: ReadonlySet<string> = new Set([TokenKind.True, TokenKind.False]);
-	const commandKinds: ReadonlySet<string> = new Set([
-		TokenKind.AreaC,
-		TokenKind.AreaP,
-		TokenKind.AreaPC,
-		TokenKind.Move,
-		TokenKind.TurnRight,
-		TokenKind.TakeFlower,
-		TokenKind.TakePaper,
-		TokenKind.DropFlower,
-		TokenKind.DropPaper,
-		TokenKind.PositionAvenue,
-		TokenKind.PositionStreet,
-		TokenKind.SetPosition,
-		TokenKind.FlowerAtCorner,
-		TokenKind.PaperAtCorner,
-		TokenKind.FlowerInBag,
-		TokenKind.PaperInBag,
-		TokenKind.Inform,
-		TokenKind.AssignArea,
-		TokenKind.StartRobot,
-		TokenKind.Random,
-		TokenKind.LockCorner,
-		TokenKind.UnlockCorner,
-		TokenKind.SendMessage,
-		TokenKind.ReceiveMessage
-	]);
 	const operatorKinds: ReadonlySet<string> = new Set([
 		TokenKind.Assign,
 		TokenKind.Colon,
@@ -289,7 +225,7 @@
 		const after = line.text.slice(offset).match(/^[\p{L}\p{N}_]*/u)?.[0] ?? '';
 		const name = `${before}${after}`;
 		const description = functionDocumentation[name];
-		if (description === undefined || name.length === 0) return null;
+		if (!Object.hasOwn(functionDocumentation, name)) return null;
 		const from = pos - before.length;
 		return {
 			pos: from,
@@ -442,8 +378,9 @@
 			if (token.kind === 'EndOfFile' || token.span.start.offset === token.span.end.offset) continue;
 			let className = '';
 			if (token.kind === TokenKind.Integer) className = 'tok-number';
-			else if (booleanKinds.has(token.kind)) className = 'tok-boolean';
-			else if (commandKinds.has(token.kind)) className = 'tok-command';
+			else if (token.kind === TokenKind.True || token.kind === TokenKind.False)
+				className = 'tok-boolean';
+			else if (Object.hasOwn(functionDocumentation, token.lexeme)) className = 'tok-command';
 			else if (operatorKinds.has(token.kind)) className = 'tok-operator';
 			else if (token.kind !== TokenKind.Identifier) className = 'tok-keyword';
 			if (className)

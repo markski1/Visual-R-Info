@@ -1,4 +1,4 @@
-import type { ValidatedProgram } from '../../language/analysis/index.js';
+import type { ValidatedProgram } from '../../language/analysis/analyze.js';
 import type { VariableDeclaration } from '../../language/ast/index.js';
 import { type Scenario, type RobotState } from '../model/index.js';
 import { failure, success, type RuntimeResult } from '../model/result.js';
@@ -71,11 +71,14 @@ export function createExecutionState(
 	});
 }
 
-function blockFrame(statements: BlockFrame['statements'], environment: Environment): BlockFrame {
+export function blockFrame(
+	statements: BlockFrame['statements'],
+	environment: Environment
+): BlockFrame {
 	return { kind: 'block', statements, environment, nextStatement: 0 };
 }
 
-function declareVariables(
+export function declareVariables(
 	environment: Environment,
 	declarations: readonly VariableDeclaration[]
 ): void {

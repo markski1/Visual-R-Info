@@ -78,19 +78,7 @@ export class Parser {
 		return this.diagnostics;
 	}
 
-	public getCurrentToken(): Token {
-		return this.current();
-	}
-
-	public isAt(kind: TokenKindType): boolean {
-		return this.at(kind);
-	}
-
-	public advanceToken(): Token {
-		return this.advance();
-	}
-
-	public addDiagnostic(token: Token, message: string, code = 'PAR001'): void {
+	public report(token: Token, message: string, code = 'PAR001'): void {
 		this.diagnostics.push({
 			code,
 			phase: 'parser',
@@ -250,19 +238,15 @@ export class Parser {
 		};
 	}
 
-	private report(token: Token, message: string): void {
-		this.addDiagnostic(token, message);
-	}
-
-	private at(kind: TokenKindType): boolean {
+	public at(kind: TokenKindType): boolean {
 		return this.current().kind === kind;
 	}
 
-	private current(): Token {
+	public current(): Token {
 		return this.tokens[Math.min(this.index, this.tokens.length - 1)];
 	}
 
-	private advance(): Token {
+	public advance(): Token {
 		const token = this.current();
 		if (!this.at(TokenKind.EndOfFile)) this.index += 1;
 		return token;

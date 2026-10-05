@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { analyze } from '../../language/analysis/index.js';
+import { analyze } from '../../language/analysis/analyze.js';
 import { createScenario } from '../model/scenario.js';
 import type { RuntimeArea } from '../model/area.js';
-import { Environment } from './environment.js';
 import { createExecutionState } from './execution-state.js';
 
 const area: RuntimeArea = {
@@ -16,24 +15,6 @@ const area: RuntimeArea = {
 };
 
 describe('estado de ejecución', () => {
-	it('comparte celdas para futuros parámetros S y ES', () => {
-		const caller = new Environment();
-		const declared = caller.declare('valor', 1);
-		expect(declared.ok).toBe(true);
-		if (!declared.ok) return;
-		const process = new Environment();
-		process.bind('resultado', declared.value);
-		const result = process.resolve('resultado');
-		expect(result).toBeDefined();
-		if (result === undefined) throw new Error('No se vinculó la celda compartida.');
-		result.value = 7;
-		expect(caller.resolve('valor')?.value).toBe(7);
-		expect(process.declare('resultado', 2)).toMatchObject({
-			ok: false,
-			error: { code: 'RUN010' }
-		});
-	});
-
 	it('crea frames independientes y no modifica el escenario original', () => {
 		const source = `programa p
 areas

@@ -145,28 +145,19 @@
 	});
 
 	$effect(() => {
-		const currentSource = source;
-		const currentCorners = scenarioCorners;
-		const currentFileName = fileName;
-		const currentExecutionSpeed = executionSpeed;
-		const currentSplitX = splitX;
-		const currentSplitCity = splitCity;
-		const currentSplitY = splitY;
+		const storedWorkspace = {
+			source,
+			corners: scenarioCorners,
+			fileName,
+			executionSpeed,
+			splitX,
+			splitCity,
+			splitY
+		};
 		if (!storageReady) return;
 		clearTimeout(storageTimer);
 		storageTimer = setTimeout(() => {
-			localStorage.setItem(
-				STORAGE_KEY,
-				JSON.stringify({
-					source: currentSource,
-					corners: currentCorners,
-					fileName: currentFileName,
-					executionSpeed: currentExecutionSpeed,
-					splitX: currentSplitX,
-					splitCity: currentSplitCity,
-					splitY: currentSplitY
-				})
-			);
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(storedWorkspace));
 		}, 300);
 	});
 
@@ -193,13 +184,7 @@
 		analysisTimer = setTimeout(() => {
 			analysis = analyze(currentSource);
 			analyzedSource = currentSource;
-			stopExecution();
-			runtime = undefined;
-			snapshot = undefined;
-			trail = [];
-			activeLines = [];
-			robotStatusMessages = {};
-			schedulingEntries = [];
+			clearRuntime();
 			runtimeError = '';
 			statusMessage = analysis.program
 				? 'Programa válido. Listo para ejecutar.'
@@ -571,10 +556,7 @@
 			return;
 		}
 
-		const corners = scenarioCorners.map((corner) => ({
-			coordinate: { ...corner.coordinate },
-			contents: { ...corner.contents }
-		}));
+		const corners = [...scenarioCorners];
 		for (const avenue of avenues) {
 			for (const street of streets) {
 				const index = corners.findIndex(
@@ -625,7 +607,7 @@
 	}
 
 	function loadExample(): void {
-		const example = EXAMPLE_PROGRAMS.find(({ id }) => id === selectedExampleId) ?? DEFAULT_EXAMPLE;
+		const example = selectedExample;
 		source = example.source;
 		fileName = `${example.id}.ri`;
 		scenarioCorners = [];
@@ -670,7 +652,14 @@
 					workspace.fileName.toLocaleLowerCase().endsWith('.ri')
 				)
 					fileName = workspace.fileName;
-				if (isStoredCorners(workspace.corners)) scenarioCorners = workspace.corners;
+				const scenario = parseScenario(
+					JSON.stringify({
+						version: 1,
+						city: { width: 100, height: 100 },
+						corners: workspace.corners
+					})
+				);
+				if (scenario.ok) scenarioCorners = [...scenario.value.corners];
 				if (isExecutionSpeed(workspace.executionSpeed)) executionSpeed = workspace.executionSpeed;
 				if (isLayoutSplit(workspace.splitX)) splitX = workspace.splitX;
 				if (isLayoutSplit(workspace.splitCity)) splitCity = workspace.splitCity;
@@ -681,31 +670,6 @@
 		}
 		storageReady = true;
 		queueMicrotask(rebuildRuntime);
-	}
-
-	function isStoredCorners(value: unknown): value is ScenarioCorner[] {
-		return (
-			Array.isArray(value) &&
-			value.every((corner: unknown) => {
-				if (typeof corner !== 'object' || corner === null) return false;
-				const candidate = corner as {
-					coordinate?: { avenue?: unknown; street?: unknown };
-					contents?: { flowers?: unknown; papers?: unknown };
-				};
-				return (
-					Number.isInteger(candidate.coordinate?.avenue) &&
-					Number.isInteger(candidate.coordinate?.street) &&
-					Number.isInteger(candidate.contents?.flowers) &&
-					Number.isInteger(candidate.contents?.papers) &&
-					(candidate.coordinate?.avenue as number) >= 1 &&
-					(candidate.coordinate?.avenue as number) <= 100 &&
-					(candidate.coordinate?.street as number) >= 1 &&
-					(candidate.coordinate?.street as number) <= 100 &&
-					(candidate.contents?.flowers as number) >= 0 &&
-					(candidate.contents?.papers as number) >= 0
-				);
-			})
-		);
 	}
 
 	function isExecutionSpeed(value: unknown): value is number {

@@ -2,18 +2,10 @@ import type { ProgramNode } from '../ast/index.js';
 import type { Diagnostic, DiagnosticPhase } from '../diagnostics/index.js';
 import { lex, type Token } from '../lexer/index.js';
 import { parseProgram } from '../parser/index.js';
-import { RINFO_CORE_PROFILE, type LanguageProfile } from '../profiles/index.js';
-import { analyzeSemantics, type SymbolTable } from '../semantics/index.js';
-
-export interface AnalysisOptions {
-	readonly profile?: LanguageProfile;
-}
+import { analyzeSemantics } from '../semantics/semantic-analyzer.js';
 
 export interface ValidatedProgram {
-	readonly profile: LanguageProfile;
-	readonly source: string;
 	readonly ast: ProgramNode;
-	readonly symbols: SymbolTable;
 }
 
 export interface AnalysisResult {
@@ -30,8 +22,7 @@ const PHASE_ORDER: Readonly<Record<DiagnosticPhase, number>> = {
 	runtime: 3
 };
 
-export function analyze(source: string, options: AnalysisOptions = {}): AnalysisResult {
-	const profile = options.profile ?? RINFO_CORE_PROFILE;
+export function analyze(source: string): AnalysisResult {
 	const lexical = lex(source);
 	const parsed = parseProgram(lexical.tokens);
 	const syntaxDiagnostics = [...lexical.diagnostics, ...parsed.diagnostics];
@@ -49,7 +40,7 @@ export function analyze(source: string, options: AnalysisOptions = {}): Analysis
 	return {
 		...baseResult,
 		diagnostics,
-		program: { profile, source, ast: parsed.program, symbols: semantic.symbols }
+		program: { ast: parsed.program }
 	};
 }
 
